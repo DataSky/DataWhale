@@ -1,16 +1,1 @@
-{
-  "app/page.tsx -> react-markdown": {
-    "id": 22683,
-    "files": [
-      "static/chunks/813.88109c439b4002bb.js",
-      "static/chunks/683.89574d3ed66709cc.js"
-    ]
-  },
-  "app/page.tsx -> rehype-highlight": {
-    "id": 59513,
-    "files": [
-      "static/chunks/813.88109c439b4002bb.js",
-      "static/chunks/513.b254bf1cc6a0d7d7.js"
-    ]
-  }
-}
+{}
