@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import dynamic from "next/dynamic"
+
+const ReactMarkdown = dynamic(function() { return import("react-markdown") }, { ssr: false })
 
 const API = ""
 async function fetchJSON(url: string, init?: RequestInit) {
@@ -282,7 +285,7 @@ export default function Home() {
                         </div>
                       ) : null}
                       {/* Content */}
-                      {msg.content ? <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</div> : null}
+                      {msg.content ? <div className="text-sm leading-relaxed"><ReactMarkdown>{msg.content}</ReactMarkdown></div> : null}
                       {/* Action bar */}
                       <div className={"mt-1.5 flex items-center gap-2 text-xs " + (msg.role === "assistant" ? "" : "justify-end")}>
                         <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
@@ -316,7 +319,7 @@ export default function Home() {
                   {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span> : null}
                 </div>
               )})}
-              {streamText ? <div className="text-sm leading-relaxed whitespace-pre-wrap">{streamText}<span className="typing-cursor" /></div> : null}
+              {streamText ? <div className="text-sm leading-relaxed"><ReactMarkdown>{streamText}</ReactMarkdown><span className="typing-cursor" /></div> : null}
               {!streamText && !streamThinking && streamTools.length === 0 ? (
                 <div className="flex gap-1.5 py-2"><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} /></div>
               ) : null}
