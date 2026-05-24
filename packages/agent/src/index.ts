@@ -213,6 +213,7 @@ export class Agent {
         timestamp: Date.now(),
       }
       this.state = { ...this.state, messages: [...this.state.messages, userMsg] }
+      this._currentUserContent = userInput
 
       this.emit({ type: "agent_start", state: this.state })
 
@@ -232,12 +233,32 @@ export class Agent {
       }
 
       this.emit({ type: "agent_end", state: this.state })
+      // Build and emit Query
+      const query = makeQuery({
+        sessionId: this.state.messages[0]?.meta?.sessionId as string || "",
+        userContent: this._currentUserContent,
+        spans: this._currentSpans,
+        model: typeof this.config.model === "string" ? this.config.model : this.config.model.model,
+      })
+      this.emit({ type: "query_end", query })
+      this._currentSpans = []
+      this._currentUserContent = ""
       return this.state
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.state = { ...this.state, status: "error", error: message }
       this.emit({ type: "error", message, recoverable: false })
       this.emit({ type: "agent_end", state: this.state })
+      // Build and emit Query
+      const query = makeQuery({
+        sessionId: this.state.messages[0]?.meta?.sessionId as string || "",
+        userContent: this._currentUserContent,
+        spans: this._currentSpans,
+        model: typeof this.config.model === "string" ? this.config.model : this.config.model.model,
+      })
+      this.emit({ type: "query_end", query })
+      this._currentSpans = []
+      this._currentUserContent = ""
       return this.state
     }
   }
@@ -329,11 +350,25 @@ export class Agent {
             assistantContent.push({ type: "text", text: event.text })
             assistantMsg = { ...assistantMsg, content: [...assistantContent] }
             this.emit({ type: "message_update", delta: event.text })
+            // Append to text span
+            var lastTextSpan = this._currentSpans[this._currentSpans.length - 1]
+            if (lastTextSpan && lastTextSpan.type === "text") {
+              lastTextSpan.content += event.text
+            } else {
+              this._currentSpans.push({ type: "text", content: event.text, startedAt: Date.now() } as TextSpan)
+            }
             break
 
           case "reasoning_delta":
             reasoningContent += event.text
             this.emit({ type: "reasoning_update", delta: event.text })
+            // Append to thinking span
+            var lastSpan = this._currentSpans[this._currentSpans.length - 1]
+            if (lastSpan && lastSpan.type === "thinking") {
+              lastSpan.content += event.text
+            } else {
+              this._currentSpans.push({ type: "thinking", content: event.text, startedAt: Date.now() } as ThinkingSpan)
+            }
             break
 
           case "tool_call_start":
@@ -344,6 +379,9 @@ export class Agent {
               arguments: "",
             })
             this.emit({ type: "tool_call_start", toolCallId: event.id, toolName: event.name, args: {} })
+            this._currentSpans.push({
+              type: "tool_call", id: event.id, name: event.name, arguments: "", isError: false, startedAt: Date.now()
+            } as ToolCallSpan)
             break
 
           case "tool_call_delta":
@@ -534,6 +572,17 @@ export class Agent {
         agentState: this.state,
       }
       this.emit({ type: "tool_call_end", toolCallId: toolCall.id, result })
+      // Update tool_call span with result
+      for (var si = this._currentSpans.length - 1; si >= 0; si--) {
+        var s = this._currentSpans[si]
+        if (s.type === "tool_call" && (s as ToolCallSpan).id === toolCall.id) {
+          var tcSpan = s as ToolCallSpan
+          tcSpan.result = result.result.content
+          tcSpan.isError = result.isError
+          tcSpan.completedAt = Date.now()
+          break
+        }
+      }
       return result
     }
 

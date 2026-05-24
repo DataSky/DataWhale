@@ -136,6 +136,11 @@ app.post("/api/chat", async (c) => {
           // Auto-save session
           sessionStore.saveMessages(sessionId, event.state.messages).catch(() => {})
           break
+        case "query_end":
+          data.queryId = event.query.id
+          event.query.sessionId = sessionId
+          queryStore.saveQuery(event.query).catch(() => {})
+          break
       }
 
       stream.writeSSE({ data: JSON.stringify(data) })
