@@ -69,7 +69,7 @@ export default function Home() {
     [sessions, searchQuery]
   )
 
-  const selectSession = useCallback(async (id: string) => {
+  undefinedconst selectSession = useCallback(async (id: string) => {
     setActiveId(id)
     try {
       const data = await fetchJSON(`/api/sessions/${id}`)
@@ -317,88 +317,104 @@ export default function Home() {
             <div className="flex items-center justify-center h-full"><div className="text-center"><div className="text-4xl mb-4">🦈</div><p className="text-text-secondary text-sm">Ask questions about your data.</p></div></div>
           ) : null}
 
-          {messages.map(function(msg, idx) {
+          {turns.map(function(turn, ti) {
             return (
-              <div key={msg.id} className={"msg-enter flex " + (msg.role === "user" ? "flex-col items-end" : "justify-start")}>
-                <div className={"max-w-[85%] min-w-0 " + (msg.role === "user" ? "bg-accent-muted text-white rounded-2xl rounded-br-md px-4 py-2.5" : (idx > 0 && messages[idx-1].role === "assistant" ? "px-4 py-1" : "bg-bg-secondary rounded-2xl rounded-bl-md px-4 py-3"))}>
-                  {editingMsgId === msg.id ? (
-                    <div className="flex gap-2">
-                      <textarea value={editText} onChange={function(e) { setEditText(e.target.value) }} className="flex-1 bg-bg-tertiary border border-accent rounded px-3 py-2 text-sm outline-none resize-none" rows={2} autoFocus />
-                      <button onClick={submitEdit} className="px-3 py-1 bg-accent text-white rounded text-xs">Send</button>
-                      <button onClick={function() { setEditingMsgId(null) }} className="px-3 py-1 bg-bg-tertiary text-text-secondary rounded text-xs">Cancel</button>
+              <div key={turn.user?.id || 't' + ti} className="space-y-2">
+                {/* User message */}
+                {turn.user ? (
+                  <div className="msg-enter flex flex-col items-end">
+                    <div className="max-w-[85%] bg-accent-muted text-white rounded-2xl rounded-br-md px-4 py-2.5">
+                      {editingMsgId === turn.user.id ? (
+                        <div className="flex gap-2">
+                          <textarea value={editText} onChange={function(e) { setEditText(e.target.value) }} className="flex-1 bg-bg-tertiary border border-accent rounded px-3 py-2 text-sm outline-none resize-none" rows={2} autoFocus />
+                          <button onClick={submitEdit} className="px-3 py-1 bg-accent text-white rounded text-xs">Send</button>
+                          <button onClick={function() { setEditingMsgId(null) }} className="px-3 py-1 bg-bg-tertiary text-text-secondary rounded text-xs">Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="text-sm leading-relaxed whitespace-pre-wrap">{turn.user.content}</div>
+                      )}
                     </div>
-                  ) : (
-                    <div>
-                      {/* Thinking */}
-                      {msg.thinking ? (
-                        expandedThinking[msg.id] ? (
-                          <details className="mb-2" open>
-                            <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
-                              onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[msg.id] = false; return n }) }}>
-                              <span className="text-[10px]">▾</span>
-                              <span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
-                            </summary>
-                            <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
-                          </details>
-                        ) : (
-                          <details className="mb-2">
-                            <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
-                              onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[msg.id] = true; return n }) }}>
-                              <span className="text-[10px]">▸</span>
-                              <span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
-                            </summary>
-                            <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
-                          </details>
-                        )
-                      ) : null}
-                      {/* Tool calls */}
-                      {msg.tools && msg.tools.length > 0 ? (
-                        <div className="mb-3 space-y-1">
-                          {msg.tools.map(function(tc) {
-                            var hasDetail = tc.detail && tc.detail.length > 10
-                            return (
-                              <details key={tc.id} className="text-xs">
-                                <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
-                                  <span className="text-success">✓</span>
-                                  <span className="text-text-secondary font-medium">{tc.name}</span>
-                                  {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview}</span> : null}
-                                  {hasDetail ? <span className="text-text-muted ml-auto text-[10px]">▸</span> : null}
+                    <div className="flex gap-2 text-xs mt-1">
+                      <span className="text-text-muted/60">{formatTime(turn.user.ts)}</span>
+                      <button onClick={function() { startEdit(turn.user) }} className="text-text-muted hover:text-text-secondary">✏️</button>
+                    </div>
+                  </div>
+                ) : null}
+                {/* Assistant group in turn */}
+                {turn.assistants.length > 0 ? (
+                  <div className="msg-enter max-w-[85%] bg-bg-secondary rounded-2xl rounded-bl-md px-4 py-3">
+                    {turn.assistants.map(function(msg, ai) {
+                      var isLastInTurn = ai === turn.assistants.length - 1
+                      return (
+                        <div key={msg.id}>
+                          {/* Thinking */}
+                          {msg.thinking ? (
+                            expandedThinking[msg.id] ? (
+                              <details className="mb-2" open>
+                                <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
+                                  onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n:{} = {}; Object.assign(n, p); n[msg.id] = false; return n }) }}>
+                                  <span className="text-[10px]">▾</span><span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
                                 </summary>
-                                {hasDetail && (
-                                  <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-96 overflow-y-auto border border-border leading-relaxed" style={{overflowY: "scroll"}}>{tc.detail}</div>
-                                )}
+                                <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
+                              </details>
+                            ) : (
+                              <details className="mb-2">
+                                <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
+                                  onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n:{} = {}; Object.assign(n, p); n[msg.id] = true; return n }) }}>
+                                  <span className="text-[10px]">▸</span><span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
+                                </summary>
+                                <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
                               </details>
                             )
-                          })}
+                          ) : null}
+                          {/* Tool calls */}
+                          {msg.tools && msg.tools.length > 0 ? (
+                            <div className="mb-3 space-y-1">
+                              {msg.tools.map(function(tc) {
+                                var hasDetail = tc.detail && tc.detail.length > 10
+                                return (
+                                  <details key={tc.id} className="text-xs">
+                                    <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-tertiary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
+                                      <span className="text-success">✓</span><span className="text-text-secondary font-medium">{tc.name}</span>
+                                      {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview}</span> : null}
+                                      {hasDetail ? <span className="text-text-muted ml-auto text-[10px]">▸</span> : null}
+                                    </summary>
+                                    {hasDetail && (
+                                      <div className="mt-1 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-96 overflow-y-auto border border-border leading-relaxed" style={{overflowY: 'scroll'}}>{tc.detail}</div>
+                                    )}
+                                  </details>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                          {/* Content */}
+                          {msg.content ? <MarkdownView content={msg.content} /> : null}
+                          {/* Separator between ReAct steps */}
+                          {!isLastInTurn ? <div className="border-t border-border my-3" /> : null}
                         </div>
+                      )
+                    })}
+                  </div>
+                ) : null}
+                {/* Turn action bar — outside gray bubble */}
+                <div className="flex items-center gap-2 text-xs">
+                  {turn.assistants.length > 0 ? (
+                    <span>
+                      <span className="text-text-muted/60">{formatTime(turn.assistants[turn.assistants.length - 1].ts)}</span>
+                      {turn.assistants[turn.assistants.length - 1].content ? (
+                        <span>
+                          <button onClick={function() { copyMessage(turn.assistants[turn.assistants.length - 1].content, turn.assistants[turn.assistants.length - 1].id) }} className="text-text-muted hover:text-text-secondary ml-2">{copiedId === turn.assistants[turn.assistants.length - 1].id ? '✓' : '📋'}</button>
+                          {ti === turns.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
+                        </span>
                       ) : null}
-                      {/* Content */}
-                      {msg.content ? <MarkdownView content={msg.content} /> : null}
-                    </div>
-                   )}
-                 </div>
-                 {/* User message: action bar outside bubble */}
-                 {msg.role === "user" ? (
-                   <div className="flex gap-2 text-xs mt-1">
-                     <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
-                     <button onClick={function() { startEdit(msg) }} className="text-text-muted hover:text-text-secondary">✏️</button>
-                   </div>
-                 ) : msg.role === "assistant" ? (
-                   <div className="flex items-center gap-2 text-xs mt-1">
-                     <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
-                     {msg.content ? (
-                       <span>
-                         <button onClick={function() { copyMessage(msg.content, msg.id) }} className="text-text-muted hover:text-text-secondary">{copiedId === msg.id ? "✓" : "📋"}</button>
-                         {idx === messages.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
-                       </span>
-                     ) : null}
-                   </div>
-                 ) : null}
-               </div>
-             )
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )
           })}
 
-          {/* Streaming */}
+          {/* Streaming */}          {/* Streaming */}
           {streaming ? (
             <div className="msg-enter flex justify-start"><div className="max-w-[85%] min-w-0 space-y-1.5">
               {streamItems.length === 0 ? (
