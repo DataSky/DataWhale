@@ -180,6 +180,46 @@ App
 | 响应式 | 移动端侧边栏折叠、触摸优化 |
 | 错误恢复 | 网络断开重连、500 重试、fallback UI |
 
+### G. 设置与配置
+
+Settings 页面（`/settings` 路由或侧边栏入口）：
+
+| 功能 | 交互方式 | 存储 |
+|------|---------|------|
+| **API Key 管理** | 输入框 + 显示/隐藏切换 + 验证按钮 | `~/.datawhale/config.json` |
+| DeepSeek API Key | 输入 + 测试连接按钮 | 同上 |
+| Anthropic API Key | 输入（可选） | 同上 |
+| OpenAI API Key | 输入（可选） | 同上 |
+| Tavily API Key | 输入（可选） | 同上 |
+| E2B API Key | 输入（可选） | 同上 |
+| **数据源配置** | 连接器列表 + 添加/编辑/删除 | `~/.datawhale/datasources.json` |
+| CSV/JSON 文件 | 文件路径 + 自动发现 | 本地文件系统 |
+| PostgreSQL | Host/Port/DB/User/Password + 测试连接 | 同上 |
+| MySQL | Host/Port/DB/User/Password + 测试连接 | 同上 |
+| SQLite 文件 | 文件路径选择器 | 本地文件系统 |
+| REST API | URL + Headers + 认证配置 | 同上 |
+| **偏好设置** | 开关/下拉 | localStorage |
+| 默认模型 | 下拉选择 | localStorage |
+| 语言 | zh-CN / en-US | localStorage |
+| 每页消息数 | 数字输入 | localStorage |
+
+### H. 监控与分析
+
+Dashboard 页面（`/dashboard` 路由）：
+
+| 功能 | 指标 | 数据来源 |
+|------|------|---------|
+| **请求趋势** | 日/周/月请求量折线图 | TraceStore 聚合查询 |
+| **Token 消耗** | 输入/输出 Token 堆叠面积图 | TraceStore `input_tokens` + `output_tokens` |
+| **模型分布** | 各模型使用占比饼图 | TraceStore `model` 字段 |
+| **延迟分布** | P50/P95/P99 延迟折线图 | TraceStore `latency_ms` |
+| **工具调用排行** | Top 10 工具柱状图 | TraceStore `tool_name` |
+| **错误率** | 错误占比趋势 + 错误类型分布 | TraceStore `event_type = 'error'` |
+| **会话活跃度** | 日活跃会话数 | SessionStore + TraceStore |
+| **知识积累** | 知识条目增长曲线 | KnowledgeStore `count()` |
+| **成本估算** | 基于 Token 的日/月费用（× DeepSeek 定价） | 计算字段 |
+| **数据导出** | CSV/JSON 导出监控数据 | API |
+
 ---
 
 ## 四、组件树
@@ -202,8 +242,9 @@ App
 │   │   │   └── SessionItem × N
 │   │   ├── Divider
 │   │   └── FileList（数据目录）
+│   │   ├── NavItem: Dashboard（📊）
+│   │   └── NavItem: Settings（⚙️）
 │   │
-│   ├── Main
 │   │   ├── WelcomeScreen（条件渲染）
 │   │   │   ├── Heading + Description
 │   │   │   ├── FileDropZone
@@ -348,6 +389,28 @@ interface AppState {
 | 快捷键系统 | 1h |
 | 错误恢复 UI（断网提示、重试） | 1h |
 
+### Phase W5（1 周）：设置与监控
+
+**目标**：API Key 配置、数据源管理、用量监控仪表盘。
+
+| 交付 | 估时 |
+|------|------|
+| Settings 页面 — API Key 管理（表单 + 验证 + 安全存储） | 2h |
+| Settings 页面 — 数据源配置（连接器 CRUD + 测试连接） | 2h |
+| Dashboard 页面 — 请求趋势 + Token 消耗图表 | 2h |
+| Dashboard 页面 — 工具调用排行 + 错误率 | 1.5h |
+| Dashboard 页面 — 成本估算 + 数据导出 | 1h |
+| 后端聚合 API（TraceStore 统计查询） | 1.5h |
+
+### 主题系统深化
+
+| 交付 | 说明 |
+|------|------|
+| 亮色主题变量 | `bg-primary: #ffffff`, `text-primary: #1a1a2e` 等全套色彩映射 |
+| 自动跟随系统 | `prefers-color-scheme` 媒体查询 |
+| 平滑过渡 | CSS transition 0.3s 切换动画 |
+| 代码高亮双主题 | highlight.js 暗色（atom-one-dark）/ 亮色（github）切换 |
+
 ---
 
-*本方案覆盖完整信息架构、组件树、状态管理、功能矩阵、技术选型、三阶段实施路线。确认后从 Phase W2 开始。*
+*本方案覆盖完整信息架构、组件树、状态管理、8 类功能矩阵、技术选型、四阶段实施路线。确认后从 Phase W2 开始。*
