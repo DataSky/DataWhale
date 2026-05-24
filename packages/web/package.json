@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "highlight.js": "^11.11.1",
+    "marked": "^18.0.4",
     "next": "^15",
     "react": "^19",
     "react-dom": "^19",
