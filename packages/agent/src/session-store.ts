@@ -162,11 +162,13 @@ export class SessionStore {
     const now = Date.now()
     for (const msg of messages) {
       // Flatten content array to pure text for consistent display
-      const content = typeof msg.content === "string"
+      const rawContent = typeof msg.content === "string"
         ? msg.content
-        : (Array.isArray(msg.content) ? msg.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("\n") : "")
+        : (Array.isArray(msg.content)
+            ? msg.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("")
+            : "")
       // Collapse one-word-per-line patterns (DeepSeek V4 quirk)
-      const collapsed = collapseNewlines(content)
+      const content = collapseNewlines(rawContent)
       // Extract tool calls into meta for frontend display
       const toolCalls = Array.isArray(msg.content)
         ? msg.content.filter(function(p: any) { return p && p.type === "tool_call" }).map(function(p: any) { return { id: p.id, name: p.name, arguments: p.arguments } })
@@ -174,7 +176,7 @@ export class SessionStore {
       const meta = { ...(msg.meta || {}), ...(toolCalls.length > 0 ? { toolCalls } : {}) }
       const metaJson = JSON.stringify(meta)
       const thinking = msg.thinking || null
-      insertStmt.run([sessionId, msg.role, collapsed, thinking, msg.timestamp || now, metaJson])
+      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp || now, metaJson])
     }
     insertStmt.free()
 
