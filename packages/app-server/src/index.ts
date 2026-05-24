@@ -12,7 +12,7 @@ import { cors } from "hono/cors"
 import { serveStatic } from "hono/bun"
 import { streamSSE } from "hono/streaming"
 import type { AgentEvent } from "@datawhale/agent"
-import { Agent, SessionStore, TraceStore, KnowledgeStore, SkillStore } from "@datawhale/agent"
+import { Agent, SessionStore, TraceStore, KnowledgeStore, SkillStore, QueryStore, makeQuery } from "@datawhale/agent"
 import { OpenAICompatibleProvider, registerProvider } from "@datawhale/ai"
 import { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext } from "@datawhale/tools"
 
