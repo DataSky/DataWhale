@@ -397,7 +397,7 @@ export default function Home() {
                   </div>
                 ) : null}
                 {/* Turn action bar — outside gray bubble */}
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-xs max-w-[85%]">
                   {turn.assistants.length > 0 ? (
                     <span>
                       <span className="text-text-muted/60">{formatTime(turn.assistants[turn.assistants.length - 1].ts)}</span>
