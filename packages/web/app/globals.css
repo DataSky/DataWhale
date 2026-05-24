@@ -1,37 +1,18 @@
-@import "tailwindcss";
-
-@theme {
-  --color-bg-primary: oklch(0.145 0.012 270);
-  --color-bg-secondary: oklch(0.19 0.012 270);
-  --color-bg-tertiary: oklch(0.24 0.012 270);
-  --color-bg-hover: oklch(0.28 0.014 270);
-  --color-border: oklch(0.32 0.012 270);
-  --color-text-primary: oklch(0.95 0.008 270);
-  --color-text-secondary: oklch(0.72 0.012 270);
-  --color-text-muted: oklch(0.55 0.012 270);
-  --color-accent: oklch(0.64 0.2 250);
-  --color-accent-hover: oklch(0.72 0.2 250);
-  --color-accent-muted: oklch(0.4 0.15 250);
-  --color-success: oklch(0.65 0.18 150);
-  --color-error: oklch(0.6 0.22 20);
-  --color-warning: oklch(0.7 0.15 80);
-}
-
-* {
-  box-sizing: border-box;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 body {
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
+  background: #1a1d23;
+  color: #e8eaed;
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+::-webkit-scrollbar-thumb { background: #3a3d45; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 
 /* Message animation */
 @keyframes fadeIn {
@@ -44,37 +25,9 @@ body {
 .typing-cursor::after {
   content: "▊";
   animation: blink 1s infinite;
-  color: var(--color-accent);
+  color: #5b8def;
 }
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
-}
-
-/* Markdown content */
-.prose { color: var(--color-text-primary); }
-.prose code { 
-  background: var(--color-bg-tertiary); 
-  padding: 0.15em 0.3em; 
-  border-radius: 0.25rem;
-  font-size: 0.875em;
-}
-.prose pre {
-  background: var(--color-bg-secondary);
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  overflow-x: auto;
-}
-.prose table {
-  border-collapse: collapse;
-  width: 100%;
-}
-.prose th, .prose td {
-  border: 1px solid var(--color-border);
-  padding: 0.4rem 0.75rem;
-  text-align: left;
-}
-.prose th {
-  background: var(--color-bg-secondary);
-  font-weight: 600;
 }
