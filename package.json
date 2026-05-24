@@ -7,7 +7,9 @@
     "packages/agent",
     "packages/tools",
     "packages/extensions",
-    "packages/cli"
+    "packages/cli",
+    "packages/app-server",
+    "packages/web"
   ],
   "scripts": {
     "build": "bun run build:ai && bun run build:agent && bun run build:tools && bun run build:extensions && bun run build:cli",

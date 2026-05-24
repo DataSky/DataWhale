@@ -26,6 +26,8 @@ interface CLIConfig {
   resumeSession: string | null
   sessionName: string | null
   listSessions: boolean
+  serveMode: boolean
+  servePort: number
 }
 
 function parseArgs(args: string[]): { config: CLIConfig; prompt?: string } {
@@ -39,6 +41,8 @@ function parseArgs(args: string[]): { config: CLIConfig; prompt?: string } {
     resumeSession: null,
     sessionName: null,
     listSessions: false,
+    serveMode: false,
+    servePort: 3000,
   }
 
   let prompt: string | undefined
@@ -81,6 +85,12 @@ function parseArgs(args: string[]): { config: CLIConfig; prompt?: string } {
       case "--list-sessions":
         config.listSessions = true
         break
+      case "serve":
+        config.serveMode = true
+        break
+      case "--port":
+        config.servePort = parseInt(args[++i] || "3000", 10)
+        break
       case "--help":
       case "-h":
         printHelp()
@@ -117,6 +127,9 @@ Options:
   -v, --verbose           Show verbose output
   --max-turns <n>         Max agent turns (default: 30)
   -h, --help              Show this help
+
+  serve                   Start web server + browser UI
+  --port <n>              Web server port (default: 3000)
 
 Environment:
   DEEPSEEK_API_KEY        DeepSeek API key (required for default model)
@@ -328,6 +341,16 @@ async function main(): Promise<void> {
 
   const args = process.argv.slice(2)
   const { config, prompt } = parseArgs(args)
+
+  // ── Serve mode ──────────────────────────────────────────────────────────
+  if (config.serveMode) {
+    process.env.PORT = String(config.servePort)
+    console.log(`🦈 Starting DataWhale Web Server...`)
+    const serverModule = await import("../../app-server/src/index.js")
+    Bun.serve({ port: config.servePort, fetch: serverModule.default.fetch })
+    console.log(`   Web UI → http://localhost:${config.servePort}`)
+    return
+  }
 
   // Check API key for the configured model
   const resolvedModel = resolveModel(config.model)

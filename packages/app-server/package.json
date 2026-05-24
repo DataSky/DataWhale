@@ -1,0 +1,16 @@
+{
+  "name": "@datawhale/app-server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@datawhale/ai": "workspace:*",
+    "@datawhale/agent": "workspace:*",
+    "@datawhale/tools": "workspace:*",
+    "@datawhale/extensions": "workspace:*",
+    "hono": "^4"
+  },
+  "scripts": {
+    "build": "echo 'no build step'"
+  }
+}
