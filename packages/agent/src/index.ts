@@ -652,3 +652,6 @@ export type { KnowledgeEntry } from "./knowledge-store.js"
 export { SkillStore } from "./skill-store.js"
 export type { Skill, SkillMeta } from "./skill-store.js"
 export type { Message, MessagePart, ToolDef, ModelConfig }
+export { QueryStore } from "./query-store.js"
+export type { Query, Span, ThinkingSpan, ToolCallSpan, TextSpan } from "./query-types.js"
+export { makeQuery } from "./query-types.js"
