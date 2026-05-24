@@ -77,7 +77,10 @@ export default function Home() {
           var c = typeof m.content === "string" ? m.content : ""
           var tools: any[] | undefined
           if (m.meta && m.meta.toolCalls) {
-            tools = m.meta.toolCalls.map(function(tc: any) { return { id: tc.id || "", name: tc.name || "unknown", status: "done", preview: tc.arguments ? tc.arguments.slice(0, 80) : "" } })
+            tools = m.meta.toolCalls.map(function(tc: any) {
+              var full = tc.result || tc.arguments || ""
+              return { id: tc.id || "", name: tc.name || "unknown", status: "done", preview: full.slice(0, 80), detail: full }
+            })
           }
           return { id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, ts: m.timestamp || 0 }
         }))
