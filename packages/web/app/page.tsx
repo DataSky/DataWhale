@@ -32,6 +32,10 @@ export default function Home() {
   const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const activeIdRef = useRef<string | null>(null)
+
+  // Keep ref in sync with state
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
 
   const loadSessions = useCallback(async () => {
     try { setSessions(await fetchJSON("/api/sessions")) } catch {}
@@ -69,7 +73,7 @@ export default function Home() {
     setStreamTools([])
 
     try {
-      const res = await fetch(`${API}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, sessionId: activeId || undefined }) })
+      const res = await fetch(`${API}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, sessionId: activeIdRef.current || undefined }) })
       if (!res.ok || !res.body) throw new Error("Connection failed")
       const reader = res.body.getReader(); const decoder = new TextDecoder()
       let buffer = "", thinking = "", content = ""; let tools: ToolCall[] = []; let newSid = activeId
@@ -103,7 +107,7 @@ export default function Home() {
       setMessages([...newMsgs, { id: `m${Date.now()}`, role: "assistant", content: "Error: " + err.message, ts: Date.now() }])
       setStreaming(false)
     }
-  }, [input, streaming, messages, activeId, loadSessions])
+  }, [input, streaming, messages, loadSessions])
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
   const newSession = () => { setActiveId(null); setMessages([]); inputRef.current?.focus() }

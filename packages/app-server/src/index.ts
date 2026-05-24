@@ -131,6 +131,7 @@ app.post("/api/chat", async (c) => {
         case "agent_end":
           data.status = event.state.status
           data.error = event.state.error
+          data.sessionId = sessionId
           // Auto-save session
           sessionStore.saveMessages(sessionId, event.state.messages).catch(() => {})
           break
