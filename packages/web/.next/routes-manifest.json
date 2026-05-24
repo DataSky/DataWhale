@@ -46,10 +46,22 @@
       "namedRegex": "^/_not\\-found(?:/)?$"
     },
     {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
       "page": "/icon.svg",
       "regex": "^/icon\\.svg(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/icon\\.svg(?:/)?$"
+    },
+    {
+      "page": "/settings",
+      "regex": "^/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings(?:/)?$"
     }
   ],
   "dataRoutes": [],

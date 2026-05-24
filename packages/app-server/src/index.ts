@@ -252,6 +252,70 @@ app.get("/api/knowledge/search", async (c) => {
   return c.json(results)
 })
 
+// ─── Config ──────────────────────────────────────────────────────────────
+
+app.get("/api/config", async (c) => {
+  const configPath = `${process.env.HOME || "~"}/.datawhale/config.json`
+  try {
+    const fs = await import("node:fs")
+    if (fs.existsSync(configPath)) {
+      return c.json(JSON.parse(fs.readFileSync(configPath, "utf-8")))
+    }
+  } catch {}
+  return c.json({})
+})
+
+app.put("/api/config", async (c) => {
+  const body = await c.req.json<Record<string, string>>()
+  const configPath = `${process.env.HOME || "~"}/.datawhale/config.json`
+  const fs = await import("node:fs")
+  const path = await import("node:path")
+  if (!fs.existsSync(path.dirname(configPath))) fs.mkdirSync(path.dirname(configPath), { recursive: true })
+  // Read existing, merge, write
+  let existing: Record<string, string> = {}
+  try { existing = JSON.parse(fs.readFileSync(configPath, "utf-8")) } catch {}
+  const merged = { ...existing, ...body }
+  fs.writeFileSync(configPath, JSON.stringify(merged, null, 2))
+  return c.json({ ok: true })
+})
+
+// ─── Monitoring ───────────────────────────────────────────────────────────
+
+app.get("/api/monitoring", async (c) => {
+  const traces = await traceStore.query(undefined, undefined, 500)
+  // Aggregate
+  const byDay: Record<string, { tokens: number; errors: number; latencyMs: number; count: number }> = {}
+  const modelCounts: Record<string, number> = {}
+  const toolCounts: Record<string, number> = {}
+
+  for (const t of traces) {
+    const day = new Date(t.timestamp).toISOString().slice(0, 10)
+    if (!byDay[day]) byDay[day] = { tokens: 0, errors: 0, latencyMs: 0, count: 0 }
+    const d = byDay[day]
+    d.count++
+    d.tokens += (t.inputTokens || 0) + (t.outputTokens || 0)
+    if (t.latencyMs) d.latencyMs += t.latencyMs
+    if (t.eventType === "error") d.errors++
+
+    if (t.model) { modelCounts[t.model] = (modelCounts[t.model] || 0) + 1 }
+    if (t.toolName) { toolCounts[t.toolName] = (toolCounts[t.toolName] || 0) + 1 }
+  }
+
+  // Sort tool counts
+  const topTools = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]).slice(0, 10)
+
+  return c.json({
+    daily: Object.entries(byDay).map(([day, d]) => ({
+      day, tokens: d.tokens, errors: d.errors,
+      avgLatency: d.count > 0 ? Math.round(d.latencyMs / d.count) : 0, count: d.count,
+    })),
+    modelDistribution: Object.entries(modelCounts).map(([model, count]) => ({ model, count })),
+    topTools: topTools.map(([name, count]) => ({ name, count })),
+    totalTokens: Object.values(byDay).reduce((s, d) => s + d.tokens, 0),
+    totalErrors: Object.values(byDay).reduce((s, d) => s + d.errors, 0),
+  })
+})
+
 // ─── Static Frontend ─────────────────────────────────────────────────────────
 
 app.get("/*", serveStatic({ root: WEB_DIR }))
