@@ -148,7 +148,12 @@ export default function Home() {
       const reader = res.body.getReader(); const decoder = new TextDecoder()
       var buf = "", thinking = "", content = ""; var tools: any[] = []; var newSid = activeIdRef.current
       var items: StreamItem[] = []
-      function pushItem(item: StreamItem) { items = [...items, item]; setStreamItems(items) }
+      // Map tool_call id → index for reliable lookup
+      var toolIndexMap: Record<string, number> = {}
+      function pushItem(item: StreamItem) { 
+        if (item.type === "tool") toolIndexMap[item.id] = items.length
+        items = [...items, item]; setStreamItems(items) 
+      }
       function updateLastItem(updater: (it: StreamItem) => StreamItem) {
         if (items.length === 0) return
         var last = items[items.length - 1]
@@ -184,12 +189,8 @@ export default function Home() {
               }
               else if (ev.type === "tool_call_start") {
                 tools = [...tools, { id: ev.toolCallId, name: ev.toolName, status: "running" }]
-                // Deduplicate: update existing tool item instead of creating duplicate
-                var existingIdx = -1
-                if (items.length > 0 && items[items.length - 1].type === "tool" && items[items.length - 1].id === ev.toolCallId) {
-                  existingIdx = items.length - 1
-                }
-                if (existingIdx >= 0) {
+                var existingIdx = toolIndexMap[ev.toolCallId]
+                if (existingIdx !== undefined && existingIdx < items.length && items[existingIdx].id === ev.toolCallId) {
                   items = [...items.slice(0, existingIdx), { ...items[existingIdx], toolStatus: "running" }, ...items.slice(existingIdx + 1)]
                   setStreamItems(items)
                 } else {
@@ -198,9 +199,8 @@ export default function Home() {
               }
               else if (ev.type === "tool_call_end") {
                 tools = tools.map(function(t) { return t.id === ev.toolCallId ? { ...t, status: ev.isError ? "error" : "done", preview: ev.content } : t })
-                var idx = -1
-                for (var j = items.length - 1; j >= Math.max(0, items.length - 5); j--) { if (items[j].id === ev.toolCallId) { idx = j; break } }
-                if (idx >= 0) {
+                var idx = toolIndexMap[ev.toolCallId]
+                if (idx !== undefined && idx < items.length && items[idx].id === ev.toolCallId) {
                   items = [...items.slice(0, idx), { ...items[idx], toolStatus: ev.isError ? "error" : "done", content: ev.content || "" }, ...items.slice(idx + 1)]
                   setStreamItems(items)
                 }
