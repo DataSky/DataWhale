@@ -72,6 +72,21 @@ export DEEPSEEK_API_KEY=sk-your-key-here
 ./dw -m deepseek-flash "快速统计行数"
 ```
 
+### Web 界面
+
+```bash
+# 一键启动 Web 服务 + 浏览器打开
+./dw serve
+
+# 自定义端口
+./dw serve --port 8080
+
+# 预加载数据
+./dw serve -l sales.csv
+```
+
+> 启动后访问 `http://localhost:3000`，享受暗色主题对话界面、会话管理、图表可视化。
+
 ### 全局安装（可选）
 
 ```bash
@@ -385,6 +400,9 @@ DataWhale 内置 DeepSeek 两档动态路由，在成本和能力间自动平衡
   --max-turns <n>         最大 Agent 轮次（默认: 30）
   -h, --help              显示帮助
 
+  serve                   启动 Web 服务 + 浏览器界面
+  --port <n>              Web 服务端口（默认: 3000）
+
 环境变量:
   DEEPSEEK_API_KEY        DeepSeek API Key（必需）
   ANTHROPIC_API_KEY       Anthropic API Key（使用 Claude 时）
@@ -463,9 +481,17 @@ DataWhale/
     │   └── self-extend.ts          # 自扩展系统（create/list extensions）
     ├── extensions/src/             # Extension 系统
     │   └── index.ts                # 动态加载 + 生命周期钩子
+    ├── app-server/src/             # Web 后端（Hono HTTP/SSE）
+    │   └── index.ts                # API 路由 + Agent 集成
+    ├── web/                        # Web 前端（Next.js）
+    │   ├── app/
+    │   │   ├── layout.tsx          # 全局布局（暗色主题）
+    │   │   ├── page.tsx            # 主页面（对话界面）
+    │   │   └── globals.css         # Tailwind + 主题变量
+    │   └── next.config.ts
     └── cli/                        # 命令行界面
         ├── src/
-        │   ├── index.ts            # 交互/非交互 CLI + 全部集成逻辑
+        │   ├── index.ts            # 交互/非交互 CLI + ./dw serve
         │   └── visual.ts           # ASCII 可视化工具（sparkline/barChart）
         └── test/
             ├── e2e.ts              # 端到端离线测试
