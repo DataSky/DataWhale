@@ -355,7 +355,7 @@ export default function Home() {
                       {msg.tools && msg.tools.length > 0 ? (
                         <div className="mb-3 space-y-1">
                           {msg.tools.map(function(tc) {
-                            var hasDetail = tc.detail && tc.detail.length > 20
+                            var hasDetail = tc.detail && tc.detail.length > 10
                             return (
                               <details key={tc.id} className="text-xs">
                                 <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
@@ -416,7 +416,7 @@ export default function Home() {
                   )
                 }
                 if (item.type === "tool") {
-                  var hasDetail = item.content && item.content.length > 20
+                  var hasDetail = item.content && item.content.length > 10
                   var isExpanded = expandedTools[item.id] || false
                   return (
                     <div key={item.id} className="text-xs">
