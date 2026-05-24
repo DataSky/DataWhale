@@ -34,6 +34,7 @@ export default function Home() {
   const [streaming, setStreaming] = useState(false)
   const [streamItems, setStreamItems] = useState<StreamItem[]>([])
   const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({})
+  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({})
   const [searchQuery, setSearchQuery] = useState("")
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -416,20 +417,24 @@ export default function Home() {
                 }
                 if (item.type === "tool") {
                   var hasDetail = item.content && item.content.length > 20
+                  var isExpanded = expandedTools[item.id] || false
                   return (
-                    <details key={item.id} className="text-xs">
-                      <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
-                        <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning"}>
+                    <div key={item.id} className="text-xs">
+                      <div 
+                        className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors"
+                        onClick={function() { setExpandedTools(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[item.id] = !p[item.id]; return n }) }}
+                      >
+                        <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning" + " shrink-0"}>
                           {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
                         </span>
-                        <span className="text-text-secondary font-medium">{item.toolName}</span>
-                        {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate flex-1">{item.content.slice(0, 80)}</span> : null}
-                        {hasDetail && item.toolStatus === "done" ? <span className="text-text-muted ml-auto text-[10px]">▸</span> : null}
-                      </summary>
-                      {hasDetail && (
-                        <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed">{item.content}</div>
+                        <span className="text-text-secondary font-medium shrink-0">{item.toolName}</span>
+                        {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate min-w-0">{item.content.slice(0, 80)}</span> : null}
+                        {hasDetail && item.toolStatus === "done" ? <span className="text-text-muted shrink-0 ml-auto text-[10px]">{isExpanded ? "▾" : "▸"}</span> : null}
+                      </div>
+                      {hasDetail && isExpanded && (
+                        <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed" style={{maxHeight: "16rem", overflowY: "auto"}}>{item.content}</div>
                       )}
-                    </details>
+                    </div>
                   )
                 }
                 return <MarkdownView key={item.id} content={item.content} />
