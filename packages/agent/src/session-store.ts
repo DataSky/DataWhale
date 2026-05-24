@@ -175,6 +175,18 @@ export class SessionStore {
     )
 
     const now = Date.now()
+    // Build a map of tool results from subsequent tool_result messages
+    const toolResults: Record<string, string> = {}
+    for (const msg of messages) {
+      if (msg.role === "tool_result" && Array.isArray(msg.content)) {
+        for (const p of msg.content) {
+          if ((p as any).type === "tool_result" && (p as any).toolCallId) {
+            toolResults[(p as any).toolCallId] = (p as any).content || ""
+          }
+        }
+      }
+    }
+
     for (const msg of messages) {
       // Flatten content array to pure text for consistent display
       const rawContent = typeof msg.content === "string"
@@ -184,9 +196,12 @@ export class SessionStore {
             : "")
       // Collapse one-word-per-line patterns (DeepSeek V4 quirk)
       const content = collapseNewlines(rawContent)
-      // Extract tool calls into meta for frontend display
+      // Extract tool calls into meta for frontend display (include results)
       const toolCalls = Array.isArray(msg.content)
-        ? msg.content.filter(function(p: any) { return p && p.type === "tool_call" }).map(function(p: any) { return { id: p.id, name: p.name, arguments: p.arguments } })
+        ? msg.content.filter(function(p: any) { return p && p.type === "tool_call" }).map(function(p: any) {
+            var result = toolResults[p.id] || ""
+            return { id: p.id, name: p.name, arguments: p.arguments, result: result }
+          })
         : []
       const meta = { ...(msg.meta || {}), ...(toolCalls.length > 0 ? { toolCalls } : {}) }
       const metaJson = JSON.stringify(meta)

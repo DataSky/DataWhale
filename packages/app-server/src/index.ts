@@ -126,7 +126,7 @@ app.post("/api/chat", async (c) => {
           data.isError = event.result.isError
           data.content = event.result.isError
             ? event.result.errorMessage
-            : event.result.result.content?.slice(0, 500)
+            : event.result.result.content || ""
           break
         case "agent_end":
           data.status = event.state.status
