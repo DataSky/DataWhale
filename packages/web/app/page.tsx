@@ -32,9 +32,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
-  const [streamText, setStreamText] = useState("")
-  const [streamThinking, setStreamThinking] = useState("")
-  const [streamTools, setStreamTools] = useState<any[]>([])
+  const [streamItems, setStreamItems] = useState<StreamItem[]>([])
   const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({})
   const [searchQuery, setSearchQuery] = useState("")
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
@@ -63,7 +61,7 @@ export default function Home() {
 
   useEffect(() => {
     try { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }) } catch {}
-  }, [messages, streamText, streamThinking, streamTools])
+  }, [messages, streamItems])
 
   const filteredSessions = useMemo(() =>
     searchQuery ? sessions.filter((s) => (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())) : sessions,
