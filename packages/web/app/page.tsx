@@ -72,35 +72,14 @@ export default function Home() {
   const selectSession = useCallback(async (id: string) => {
     setActiveId(id)
     try {
-      // Try Query API first (new Span-based model)
-      const queries = await fetchJSON(`/api/queries?sessionId=${id}`)
-      if (queries && queries.length > 0) {
-        var msgs: Msg[] = []
-        for (var qi = 0; qi < queries.length; qi++) {
-          var q = queries[qi]
-          // User message
-          msgs.push({ id: "u" + qi, role: "user", content: q.userContent || "", ts: q.createdAt || Date.now() })
-          // Build assistant message from spans
-          var thinking = ""
-          var text = ""
-          var tools: any[] = []
-          for (var si = 0; si < (q.spans || []).length; si++) {
-            var span = q.spans[si]
-            if (span.type === "thinking") { thinking += (thinking ? "\n" : "") + span.content }
-            else if (span.type === "tool_call") { tools.push({ id: span.id || "", name: span.name || "", status: "done", preview: (span.result || span.arguments || "").slice(0, 80), detail: span.result || span.arguments || "" }) }
-            else if (span.type === "text") { text += (text ? "\n" : "") + span.content }
-          }
-          msgs.push({ id: "a" + qi, role: "assistant", content: text, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: q.createdAt || Date.now() })
-        }
-        setMessages(msgs)
-        return
-      }
-
-      // Fallback: old messages API
       const data = await fetchJSON(`/api/sessions/${id}`)
       if (data.messages) {
-        setMessages(data.messages.filter(function(m: any) { return m.role !== "tool_result" }).map(function(m: any, i: number) {
-          var c = typeof m.content === "string" ? m.content : ""
+        // Filter out internal tool_result messages, keep user + assistant
+        const raw = data.messages.filter(function(m: any) { return m.role === "user" || m.role === "assistant" })
+        const msgs: Msg[] = []
+        for (var i = 0; i < raw.length; i++) {
+          var m = raw[i]
+          var c = typeof m.content === "string" ? m.content : (Array.isArray(m.content) ? m.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("") : "")
           var tools: any[] | undefined
           if (m.meta && m.meta.toolCalls) {
             tools = m.meta.toolCalls.map(function(tc: any) {
@@ -108,8 +87,9 @@ export default function Home() {
               return { id: tc.id || "", name: tc.name || "unknown", status: "done", preview: full.slice(0, 80), detail: full }
             })
           }
-          return { id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, ts: m.timestamp || 0 }
-        }))
+          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, ts: m.timestamp || 0 })
+        }
+        setMessages(msgs)
       }
     } catch {}
   }, [])
