@@ -186,7 +186,9 @@ export default function Home() {
                 tools = [...tools, { id: ev.toolCallId, name: ev.toolName, status: "running" }]
                 // Deduplicate: update existing tool item instead of creating duplicate
                 var existingIdx = -1
-                for (var j = items.length - 1; j >= 0; j--) { if (items[j].type === "tool" && items[j].id === ev.toolCallId) { existingIdx = j; break } }
+                if (items.length > 0 && items[items.length - 1].type === "tool" && items[items.length - 1].id === ev.toolCallId) {
+                  existingIdx = items.length - 1
+                }
                 if (existingIdx >= 0) {
                   items = [...items.slice(0, existingIdx), { ...items[existingIdx], toolStatus: "running" }, ...items.slice(existingIdx + 1)]
                   setStreamItems(items)
@@ -197,7 +199,7 @@ export default function Home() {
               else if (ev.type === "tool_call_end") {
                 tools = tools.map(function(t) { return t.id === ev.toolCallId ? { ...t, status: ev.isError ? "error" : "done", preview: ev.content } : t })
                 var idx = -1
-                for (var j = items.length - 1; j >= 0; j--) { if (items[j].id === ev.toolCallId) { idx = j; break } }
+                for (var j = items.length - 1; j >= Math.max(0, items.length - 5); j--) { if (items[j].id === ev.toolCallId) { idx = j; break } }
                 if (idx >= 0) {
                   items = [...items.slice(0, idx), { ...items[idx], toolStatus: ev.isError ? "error" : "done", content: ev.content || "" }, ...items.slice(idx + 1)]
                   setStreamItems(items)
