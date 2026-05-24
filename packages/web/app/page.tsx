@@ -1,7 +1,17 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo, Component } from "react"
 import dynamic from "next/dynamic"
+
+// Error boundary to catch client-side exceptions
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+  state = { error: null as string | null }
+  static getDerivedStateFromError(e: Error) { return { error: e.message } }
+  render() {
+    if (this.state.error) return <div className="min-h-screen bg-bg-primary flex items-center justify-center"><div className="text-center"><p className="text-error font-medium">Error</p><p className="text-text-muted text-sm mt-1">{this.state.error}</p><button onClick={() => this.setState({ error: null })} className="mt-3 px-4 py-1.5 bg-accent text-white rounded text-sm">Retry</button></div></div>
+    return this.props.children
+  }
+}
 
 const ReactMarkdown = dynamic(() => import("react-markdown"), { ssr: false })
 const rehypeHighlightPromise = import("rehype-highlight").then(m => m.default)
@@ -201,6 +211,7 @@ export default function Home() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="flex h-screen" onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={e => { e.preventDefault(); setDragOver(false) }} onDrop={handleDrop}>
       {/* ── Sidebar ──────────────────────────────────────── */}
       {sidebarOpen && (
@@ -359,5 +370,6 @@ export default function Home() {
         </div>
       </main>
     </div>
+    </ErrorBoundary>
   )
 }
