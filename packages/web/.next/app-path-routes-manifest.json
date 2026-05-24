@@ -2,6 +2,6 @@
   "/icon.svg/route": "/icon.svg",
   "/_not-found/page": "/_not-found",
   "/page": "/",
-  "/settings/page": "/settings",
-  "/dashboard/page": "/dashboard"
+  "/dashboard/page": "/dashboard",
+  "/settings/page": "/settings"
 }

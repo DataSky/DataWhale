@@ -63,17 +63,11 @@ export default function Home() {
     try {
       const data = await fetchJSON(`/api/sessions/${id}`)
       if (data.messages) {
-        setMessages(data.messages.filter((m: any) => m.role !== "tool_result").map((m: any, i: number) => {
-          let c = ""
-          let tools: any[] | undefined
-          if (typeof m.content === "string") {
-            c = m.content
-          } else if (Array.isArray(m.content)) {
-            c = m.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("\n")
-            var tcs = m.content.filter(function(p: any) { return p && p.type === "tool_call" })
-            if (tcs.length > 0) {
-              tools = tcs.map(function(tc: any) { return { id: tc.id || "", name: tc.name || "unknown", status: "done", preview: tc.arguments ? tc.arguments.slice(0, 80) : "" } })
-            }
+        setMessages(data.messages.filter(function(m: any) { return m.role !== "tool_result" }).map(function(m: any, i: number) {
+          var c = typeof m.content === "string" ? m.content : ""
+          var tools: any[] | undefined
+          if (m.meta && m.meta.toolCalls) {
+            tools = m.meta.toolCalls.map(function(tc: any) { return { id: tc.id || "", name: tc.name || "unknown", status: "done", preview: tc.arguments ? tc.arguments.slice(0, 80) : "" } })
           }
           return { id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, ts: m.timestamp || 0 }
         }))

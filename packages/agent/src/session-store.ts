@@ -161,10 +161,18 @@ export class SessionStore {
 
     const now = Date.now()
     for (const msg of messages) {
-      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+      // Flatten content array to pure text for consistent display
+      const content = typeof msg.content === "string"
+        ? msg.content
+        : (Array.isArray(msg.content) ? msg.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("\n") : "")
+      // Extract tool calls into meta for frontend display
+      const toolCalls = Array.isArray(msg.content)
+        ? msg.content.filter(function(p: any) { return p && p.type === "tool_call" }).map(function(p: any) { return { id: p.id, name: p.name, arguments: p.arguments } })
+        : []
+      const meta = { ...(msg.meta || {}), ...(toolCalls.length > 0 ? { toolCalls } : {}) }
+      const metaJson = JSON.stringify(meta)
       const thinking = msg.thinking || null
-      const meta = msg.meta ? JSON.stringify(msg.meta) : null
-      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp || now, meta])
+      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp || now, metaJson])
     }
     insertStmt.free()
 
@@ -187,16 +195,9 @@ export class SessionStore {
     const messages: AgentMessage[] = []
     while (stmt.step()) {
       const row = stmt.getAsObject()
-      let content: string | any[] = row.content as string
-      // Try to parse JSON content (for tool results)
-      if (content.startsWith("[") || content.startsWith("{")) {
-        try {
-          content = JSON.parse(content as string)
-        } catch {}
-      }
       messages.push({
         role: row.role as AgentMessage["role"],
-        content,
+        content: (row.content as string) || "",
         thinking: (row as any).thinking || undefined,
         timestamp: row.timestamp as number,
         meta: row.meta ? JSON.parse(row.meta as string) : undefined,
