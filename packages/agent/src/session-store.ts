@@ -73,6 +73,21 @@ export class SessionStore {
       )
     `)
 
+    // ── Auto-migration: add missing columns ──────────────────────────────
+    try {
+      const cols = this._db.exec("PRAGMA table_info(messages)")
+      if (cols[0]) {
+        const colNames = cols[0].values.map((r: any) => r[1])
+        if (!colNames.includes("thinking")) {
+          this._db.run("ALTER TABLE messages ADD COLUMN thinking TEXT")
+        }
+        if (!colNames.includes("meta")) {
+          this._db.run("ALTER TABLE messages ADD COLUMN meta TEXT")
+        }
+      }
+    } catch {}
+    // ──────────────────────────────────────────────────────────────────────
+
     return this._db
   }
 
