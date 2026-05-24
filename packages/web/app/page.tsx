@@ -84,10 +84,14 @@ export default function Home() {
     setActiveSessionId(id); setMessages([])
     try {
       const data = await fetchJSON(`/api/sessions/${id}`)
-      if (data.messages) setMessages(data.messages.map((m: any, i: number) => ({
-        id: `msg_${i}`, role: m.role === "user" ? "user" : "assistant",
-        content: typeof m.content === "string" ? m.content : "", timestamp: m.timestamp || Date.now(),
-      })))
+      if (data.messages) setMessages(data.messages
+        .filter((m: any) => m.role !== "tool_result")
+        .map((m: any, i: number) => {
+        let content = ""
+        if (typeof m.content === "string") content = m.content
+        else if (Array.isArray(m.content)) content = m.content.filter((p: any) => p?.type === "text").map((p: any) => p.text || "").join("\n")
+        return { id: `msg_${i}`, role: m.role === "user" ? "user" : "assistant", content, timestamp: m.timestamp || Date.now() }
+      }))
     } catch {}
   }, [])
 
