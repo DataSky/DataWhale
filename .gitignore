@@ -3,3 +3,7 @@ node_modules/
 *.duckdb
 dist/
 .DS_Store
+
+# Web build outputs
+packages/web/.next/
+packages/web/out/
