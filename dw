@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# DataWhale CLI launcher
+# Usage: ./dw [options] [prompt]
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR"
+exec bun run packages/cli/src/index.ts "$@"

@@ -1,0 +1,13 @@
+{
+  "name": "@datawhale/agent",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@datawhale/ai": "workspace:*",
+    "@datawhale/tools": "workspace:*"
+  },
+  "scripts": {
+    "build": "echo 'no build step'"
+  }
+}

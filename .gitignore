@@ -1,0 +1,5 @@
+node_modules/
+.env
+*.duckdb
+dist/
+.DS_Store

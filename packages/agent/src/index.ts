@@ -1,0 +1,590 @@
+/**
+ * @datawhale/agent — Event-driven agent runtime
+ * 
+ * Inspired by @earendil-works/pi-agent-core:
+ * - AgentLoop with turn-based execution
+ * - Tool calling with parallel execution
+ * - Event streaming for UI integration
+ * - State management with immutable updates
+ */
+
+import type { Message, MessagePart, ToolDef, ToolResultPart } from "@datawhale/ai"
+import { chatStream, resolveModel, type ModelConfig } from "@datawhale/ai"
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export type AgentStatus =
+  | "idle"
+  | "thinking"
+  | "acting"
+  | "waiting"
+  | "done"
+  | "error"
+
+export interface AgentConfig {
+  /** System prompt for the agent */
+  systemPrompt: string
+  /** Model to use (alias or provider/model) */
+  model: string | ModelConfig
+  /** Available tools */
+  tools: AgentTool[]
+  /** Maximum turns (LLM calls) per run */
+  maxTurns?: number
+  /** Temperature override */
+  temperature?: number
+  /** Max tokens per response */
+  maxTokens?: number
+  /** Called before each turn, can modify messages */
+  transformContext?: (messages: AgentMessage[]) => AgentMessage[]
+  /** Called before tool execution */
+  beforeToolCall?: (ctx: ToolCallContext) => void | Promise<void>
+  /** Called after tool execution */
+  afterToolCall?: (ctx: ToolCallResult) => void | Promise<void>
+}
+
+export interface AgentTool {
+  name: string
+  description: string
+  parameters: Record<string, unknown> // JSON Schema
+  /** Execution mode: parallel allows concurrent execution with other tools */
+  executionMode?: "sequential" | "parallel"
+  /** Execute the tool. Throw on error, return content on success. */
+  execute: (
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    onUpdate?: (update: { content: string }) => void
+  ) => Promise<ToolResult>
+}
+
+export interface ToolResult {
+  content: string
+  details?: Record<string, unknown>
+  /** Set to true to hint the agent should stop after this batch */
+  terminate?: boolean
+}
+
+export interface ToolCallContext {
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  agentState: AgentState
+}
+
+export interface ToolCallResult extends ToolCallContext {
+  result: ToolResult
+  isError: boolean
+  errorMessage?: string
+}
+
+// ─── Agent Messages ──────────────────────────────────────────────────────────
+
+export interface AgentMessage {
+  role: "system" | "user" | "assistant" | "tool_result"
+  content: string | MessagePart[]
+  timestamp: number
+  /** Optional metadata for tracking */
+  meta?: Record<string, unknown>
+}
+
+export interface AgentState {
+  messages: AgentMessage[]
+  tools: AgentTool[]
+  status: AgentStatus
+  turnCount: number
+  currentToolCallId?: string
+  error?: string
+}
+
+// ─── Agent Events ────────────────────────────────────────────────────────────
+
+export type AgentEvent =
+  | { type: "agent_start"; state: AgentState }
+  | { type: "agent_end"; state: AgentState }
+  | { type: "turn_start"; turn: number }
+  | { type: "turn_end"; turn: number; toolResults: ToolCallResult[] }
+  | { type: "message_start"; message: AgentMessage }
+  | { type: "message_update"; delta: string }
+  | { type: "message_end"; message: AgentMessage }
+  | { type: "tool_call_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
+  | { type: "tool_call_progress"; toolCallId: string; content: string }
+  | { type: "tool_call_end"; toolCallId: string; result: ToolCallResult }
+  | { type: "error"; message: string; recoverable: boolean }
+
+// ─── Agent Class ─────────────────────────────────────────────────────────────
+
+type EventListener = (event: AgentEvent) => void
+
+export class Agent {
+  public state: AgentState
+  private config: AgentConfig
+  private listeners: Set<EventListener> = new Set()
+  private abortController: AbortController | null = null
+
+  constructor(config: AgentConfig) {
+    this.config = {
+      maxTurns: 50,
+      ...config,
+    }
+    this.state = {
+      messages: [],
+      tools: config.tools,
+      status: "idle",
+      turnCount: 0,
+    }
+  }
+
+  /** Subscribe to agent events */
+  subscribe(listener: EventListener): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  /** Emit an event to all listeners */
+  private emit(event: AgentEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event)
+      } catch {
+        // Don't let listener errors break the agent
+      }
+    }
+  }
+
+  /** Send a user prompt and run the agent loop */
+  async prompt(userInput: string): Promise<AgentState> {
+    this.abortController = new AbortController()
+
+    try {
+      this.state = {
+        ...this.state,
+        status: "thinking",
+        turnCount: 0,
+        error: undefined,
+      }
+
+      // Add user message
+      const userMsg: AgentMessage = {
+        role: "user",
+        content: userInput,
+        timestamp: Date.now(),
+      }
+      this.state = { ...this.state, messages: [...this.state.messages, userMsg] }
+
+      this.emit({ type: "agent_start", state: this.state })
+
+      // Main agent loop
+      const maxTurns = this.config.maxTurns || 50
+      while (this.state.turnCount < maxTurns) {
+        const turnResult = await this.runTurn()
+        if (turnResult === "stop") break
+        if (turnResult === "error") {
+          this.state = { ...this.state, status: "error" }
+          break
+        }
+      }
+
+      if (this.state.status !== "error") {
+        this.state = { ...this.state, status: "done" }
+      }
+
+      this.emit({ type: "agent_end", state: this.state })
+      return this.state
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.state = { ...this.state, status: "error", error: message }
+      this.emit({ type: "error", message, recoverable: false })
+      this.emit({ type: "agent_end", state: this.state })
+      return this.state
+    }
+  }
+
+  /** Abort the current run */
+  abort(): void {
+    this.abortController?.abort()
+  }
+
+  /** Add a system message */
+  addSystemMessage(content: string): void {
+    this.state = {
+      ...this.state,
+      messages: [
+        ...this.state.messages,
+        { role: "system", content, timestamp: Date.now() },
+      ],
+    }
+  }
+
+  /** Update available tools */
+  setTools(tools: AgentTool[]): void {
+    this.state = { ...this.state, tools }
+  }
+
+  // ─── Private: Turn Loop ─────────────────────────────────────────────────
+
+  private async runTurn(): Promise<"continue" | "stop" | "error"> {
+    const turn = this.state.turnCount + 1
+    this.state = { ...this.state, turnCount: turn, status: "thinking" }
+    this.emit({ type: "turn_start", turn })
+
+    // Build messages for LLM
+    let llmMessages = this.buildLlmMessages()
+
+    // Apply context transform if configured
+    if (this.config.transformContext) {
+      llmMessages = this.config.transformContext(
+        llmMessages.filter((m) => m.role !== "system")
+      )
+    }
+
+    // Build final message list
+    const messages: Message[] = [
+      { role: "system", content: this.buildSystemPrompt() },
+      ...this.toLlmMessages(llmMessages),
+    ]
+
+    // Resolve model config
+    const modelConfig =
+      typeof this.config.model === "string"
+        ? resolveModel(this.config.model, {
+            temperature: this.config.temperature,
+            maxTokens: this.config.maxTokens,
+          })
+        : this.config.model
+
+    // Build tool defs for LLM
+    const toolDefs: ToolDef[] = this.state.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    }))
+
+    // Call LLM with streaming
+    let assistantContent: MessagePart[] = []
+    let assistantMsg: AgentMessage = {
+      role: "assistant",
+      content: [],
+      timestamp: Date.now(),
+    }
+
+    this.emit({ type: "message_start", message: { ...assistantMsg } })
+
+    try {
+      for await (const event of chatStream({
+        model: modelConfig,
+        messages,
+        tools: toolDefs.length > 0 ? toolDefs : undefined,
+        abortSignal: this.abortController?.signal,
+      })) {
+        switch (event.type) {
+          case "text_delta":
+            assistantContent.push({ type: "text", text: event.text })
+            assistantMsg = { ...assistantMsg, content: [...assistantContent] }
+            this.emit({ type: "message_update", delta: event.text })
+            break
+
+          case "tool_call_start":
+            assistantContent.push({
+              type: "tool_call",
+              id: event.id,
+              name: event.name,
+              arguments: "",
+            })
+            break
+
+          case "tool_call_delta":
+            // Update the last tool_call part
+            const lastPart = assistantContent[assistantContent.length - 1]
+            if (lastPart?.type === "tool_call") {
+              assistantContent[assistantContent.length - 1] = {
+                ...lastPart,
+                arguments: lastPart.arguments + event.arguments,
+              }
+            }
+            break
+
+          case "tool_call_end":
+            // Update final arguments
+            const idx = assistantContent.findIndex(
+              (p) => p.type === "tool_call" && p.id === event.id
+            )
+            if (idx >= 0) {
+              assistantContent[idx] = {
+                type: "tool_call",
+                id: event.id,
+                name: event.name,
+                arguments: event.arguments,
+              }
+            }
+            break
+
+          case "error":
+            this.state = { ...this.state, error: event.message }
+            this.emit({ type: "error", message: event.message, recoverable: false })
+            return "error"
+
+          case "finish":
+            break
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.emit({ type: "error", message, recoverable: true })
+      return "error"
+    }
+
+    // Finalize assistant message
+    assistantMsg = { ...assistantMsg, content: assistantContent }
+    this.state = {
+      ...this.state,
+      messages: [...this.state.messages, assistantMsg],
+    }
+    this.emit({ type: "message_end", message: assistantMsg })
+
+    // Extract tool calls
+    const toolCalls = assistantContent.filter(
+      (p): p is { type: "tool_call"; id: string; name: string; arguments: string } =>
+        p.type === "tool_call"
+    )
+
+    if (toolCalls.length === 0) {
+      // No tool calls → agent is done
+      this.emit({ type: "turn_end", turn, toolResults: [] })
+      return "stop"
+    }
+
+    // Execute tools
+    this.state = { ...this.state, status: "acting" }
+    const toolResults = await this.executeTools(toolCalls)
+
+    // Add tool results to messages
+    for (const tr of toolResults) {
+      const toolResultMsg: AgentMessage = {
+        role: "tool_result",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: tr.toolCallId,
+            content: tr.isError ? `Error: ${tr.errorMessage}` : tr.result.content,
+            isError: tr.isError,
+          } as MessagePart,
+        ],
+        timestamp: Date.now(),
+      }
+      this.state = {
+        ...this.state,
+        messages: [...this.state.messages, toolResultMsg],
+      }
+    }
+
+    this.emit({ type: "turn_end", turn, toolResults })
+
+    // Check if all tools want to terminate
+    const allTerminate = toolResults.every((tr) => tr.result.terminate)
+    if (allTerminate && toolResults.length > 0) {
+      return "stop"
+    }
+
+    return "continue"
+  }
+
+  // ─── Private: Tool Execution ────────────────────────────────────────────
+
+  private async executeTools(
+    toolCalls: Array<{ type: "tool_call"; id: string; name: string; arguments: string }>
+  ): Promise<ToolCallResult[]> {
+    const results: ToolCallResult[] = []
+
+    // Group tools by execution mode
+    const sequential: typeof toolCalls = []
+    const parallel: typeof toolCalls = []
+
+    for (const tc of toolCalls) {
+      const toolDef = this.state.tools.find((t) => t.name === tc.name)
+      if (toolDef?.executionMode === "sequential") {
+        sequential.push(tc)
+      } else {
+        parallel.push(tc)
+      }
+    }
+
+    // Execute sequential tools one at a time
+    for (const tc of sequential) {
+      const result = await this.executeSingleTool(tc)
+      results.push(result)
+    }
+
+    // Execute parallel tools concurrently
+    if (parallel.length > 0) {
+      const parallelResults = await Promise.all(
+        parallel.map((tc) => this.executeSingleTool(tc))
+      )
+      results.push(...parallelResults)
+    }
+
+    return results
+  }
+
+  private async executeSingleTool(
+    toolCall: { type: "tool_call"; id: string; name: string; arguments: string }
+  ): Promise<ToolCallResult> {
+    const toolDef = this.state.tools.find((t) => t.name === toolCall.name)
+    let args: Record<string, unknown> = {}
+
+    try {
+      args = JSON.parse(toolCall.arguments)
+    } catch {
+      return {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        args: {},
+        result: { content: "" },
+        isError: true,
+        errorMessage: `Failed to parse tool arguments: ${toolCall.arguments}`,
+        agentState: this.state,
+      }
+    }
+
+    this.emit({
+      type: "tool_call_start",
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      args,
+    })
+
+    // Run beforeToolCall hook
+    if (this.config.beforeToolCall) {
+      await this.config.beforeToolCall({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        args,
+        agentState: this.state,
+      })
+    }
+
+    if (!toolDef) {
+      const result: ToolCallResult = {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        args,
+        result: { content: "" },
+        isError: true,
+        errorMessage: `Unknown tool: ${toolCall.name}`,
+        agentState: this.state,
+      }
+      this.emit({ type: "tool_call_end", toolCallId: toolCall.id, result })
+      return result
+    }
+
+    try {
+      const toolResult = await toolDef.execute(
+        toolCall.id,
+        args,
+        this.abortController?.signal,
+        (update) => {
+          this.emit({
+            type: "tool_call_progress",
+            toolCallId: toolCall.id,
+            content: update.content,
+          })
+        }
+      )
+
+      const result: ToolCallResult = {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        args,
+        result: toolResult,
+        isError: false,
+        agentState: this.state,
+      }
+
+      // Run afterToolCall hook
+      if (this.config.afterToolCall) {
+        await this.config.afterToolCall(result)
+      }
+
+      this.emit({ type: "tool_call_end", toolCallId: toolCall.id, result })
+      return result
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      const result: ToolCallResult = {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        args,
+        result: { content: "" },
+        isError: true,
+        errorMessage,
+        agentState: this.state,
+      }
+
+      if (this.config.afterToolCall) {
+        await this.config.afterToolCall(result)
+      }
+
+      this.emit({ type: "tool_call_end", toolCallId: toolCall.id, result })
+      return result
+    }
+  }
+
+  // ─── Private: Message Building ──────────────────────────────────────────
+
+  private buildSystemPrompt(): string {
+    let prompt = this.config.systemPrompt
+
+    // Add available data context if tools include database access
+    const hasDbTools = this.state.tools.some((t) =>
+      ["list_tables", "query", "describe_table", "get_schema"].includes(t.name)
+    )
+    if (hasDbTools) {
+      prompt += `\n\nYou have access to database tools. Always explore the data structure before querying.`
+    }
+
+    // Add tool list to system prompt
+    if (this.state.tools.length > 0) {
+      prompt += `\n\nAvailable tools:`
+      for (const tool of this.state.tools) {
+        prompt += `\n- ${tool.name}: ${tool.description}`
+      }
+    }
+
+    return prompt
+  }
+
+  private buildLlmMessages(): AgentMessage[] {
+    let messages = this.state.messages
+
+    // Apply transform if configured
+    if (this.config.transformContext) {
+      messages = this.config.transformContext(messages)
+    }
+
+    return messages
+  }
+
+  private toLlmMessages(agentMessages: AgentMessage[]): Message[] {
+    return agentMessages
+      .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool_result")
+      .map((m) => {
+        if (m.role === "tool_result") {
+          const parts = Array.isArray(m.content) ? m.content : []
+          const toolResult = parts.find((p) => p.type === "tool_result")
+          return {
+            role: "tool" as const,
+            content: m.content,
+            toolCallId: toolResult?.toolCallId,
+          }
+        }
+        return {
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }
+      }) as Message[]
+  }
+}
+
+// ─── Re-exports ───────────────────────────────────────────────────────────────
+
+export { SessionStore } from "./session-store.js"
+export type { SessionMeta } from "./session-store.js"
+export type { Message, MessagePart, ToolDef, ModelConfig }

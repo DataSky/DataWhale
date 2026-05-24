@@ -1,0 +1,29 @@
+{
+  "name": "datawhale",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/ai",
+    "packages/agent",
+    "packages/tools",
+    "packages/extensions",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "bun run build:ai && bun run build:agent && bun run build:tools && bun run build:extensions && bun run build:cli",
+    "build:ai": "cd packages/ai && bun run build",
+    "build:agent": "cd packages/agent && bun run build",
+    "build:tools": "cd packages/tools && bun run build",
+    "build:extensions": "cd packages/extensions && bun run build",
+    "build:cli": "cd packages/cli && bun run build",
+    "check": "bun x tsc --noEmit",
+    "clean": "rm -rf packages/*/dist"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}
