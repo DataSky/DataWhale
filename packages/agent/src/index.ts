@@ -385,7 +385,7 @@ export class Agent {
     }
 
     // Finalize assistant message
-    assistantMsg = { ...assistantMsg, content: assistantContent, meta: reasoningContent ? { reasoningContent } : undefined }
+    assistantMsg = { ...assistantMsg, content: assistantContent, thinking: reasoningContent || undefined, meta: reasoningContent ? { reasoningContent } : undefined }
     this.state = {
       ...this.state,
       messages: [...this.state.messages, assistantMsg],

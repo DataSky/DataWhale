@@ -268,15 +268,25 @@ export default function Home() {
                     <div>
                       {/* Thinking */}
                       {msg.thinking ? (
-                        <details className="mb-2" open={!!expandedThinking[msg.id]}>
-                          <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
-                            onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[msg.id] = !p[msg.id]; return n }) }}>
-                            <span className="text-[10px]">{expandedThinking[msg.id] ? "▾" : "▸"}</span>
-                            <span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
-                          </summary>
-                          <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
-                        </details>
-                      ) : null}
+                        expandedThinking[msg.id] ? (
+                          <details className="mb-2" open>
+                            <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
+                              onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[msg.id] = false; return n }) }}>
+                              <span className="text-[10px]">▾</span>
+                              <span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
+                            </summary>
+                            <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
+                          </details>
+                        ) : (
+                          <details className="mb-2">
+                            <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5"
+                              onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[msg.id] = true; return n }) }}>
+                              <span className="text-[10px]">▸</span>
+                              <span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
+                            </summary>
+                            <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
+                          </details>
+                        )
                       {/* Tool calls */}
                       {msg.tools && msg.tools.length > 0 ? (
                         <div className="mb-3 space-y-1">
