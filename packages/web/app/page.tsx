@@ -213,7 +213,7 @@ export default function Home() {
                           {menuOpen === s.id ? (
                             <div className="absolute right-0 top-5 bg-bg-tertiary border border-border rounded-lg shadow-lg py-1 z-50 min-w-[100px]" onClick={function(e) { e.stopPropagation() }}>
                               <button onClick={function() { startRename(s.id, s.title) }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-bg-hover">✎ Rename</button>
-                              <button onClick={function() { exportSession(s.id) }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-bg-hover">📥 Export .md</button>
+                              <button onClick={function() { exportSession(s.id) }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-bg-hover">📥 Export</button>
                               <button onClick={function() { deleteSession(s.id) }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-bg-hover text-error">✕ Delete</button>
                             </div>
                           ) : null}
