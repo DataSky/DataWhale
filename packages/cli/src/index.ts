@@ -6,7 +6,7 @@
  *        dw --db ./mydb.duckdb "show me the schema"
  */
 
-import { Agent, SessionStore, TraceStore, KnowledgeStore } from "@datawhale/agent"
+import { Agent, SessionStore, TraceStore, KnowledgeStore, SkillStore } from "@datawhale/agent"
 import type { SessionMeta, TraceRecord, KnowledgeEntry } from "@datawhale/agent"
 import { AnthropicProvider, OpenAICompatibleProvider, registerProvider, resolveModel, getProvider } from "@datawhale/ai"
 import { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext } from "@datawhale/tools"
@@ -485,6 +485,22 @@ async function main(): Promise<void> {
     }
   } catch {}
 
+  // ── Skill matching ─────────────────────────────────────────────────────
+  const skillStore = new SkillStore()
+  let skillContext = ""
+  try {
+    await skillStore.discover()
+    const matched = skillStore.matchSkills(userPrompt, 3)
+    if (matched.length > 0) {
+      skillContext = matched.map((s) =>
+        `\n\n## Skill: ${s.name}\n\n${s.body}`
+      ).join("\n")
+      if (config.verbose) {
+        console.log(`   🎯 Matched ${matched.length} skill(s): ${matched.map((s) => s.id).join(", ")}`)
+      }
+    }
+  } catch {}
+
   // ── Extensions, tools, agent ──────────────────────────────────────────────
 
 
@@ -517,7 +533,7 @@ async function main(): Promise<void> {
   const allTools = [...DuckDBTools.all, ...DataIOTools.all, ...ExternalTools.all, ...SelfExtendTools.all, ...extensionTools]
 
   // Build system prompt
-  const systemPrompt = extensionRegistry.getSystemPrompt() + knowledgeContext
+  const systemPrompt = extensionRegistry.getSystemPrompt() + knowledgeContext + skillContext
 
   // Create agent
   const agent = new Agent({

@@ -607,4 +607,6 @@ export { TraceStore } from "./trace-store.js"
 export type { TraceRecord } from "./trace-store.js"
 export { KnowledgeStore } from "./knowledge-store.js"
 export type { KnowledgeEntry } from "./knowledge-store.js"
+export { SkillStore } from "./skill-store.js"
+export type { Skill, SkillMeta } from "./skill-store.js"
 export type { Message, MessagePart, ToolDef, ModelConfig }
