@@ -205,6 +205,15 @@ app.delete("/api/sessions/:id", async (c) => {
   return c.json({ ok: true })
 })
 
+app.patch("/api/sessions/:id", async (c) => {
+  const id = c.req.param("id")
+  const body = await c.req.json<{ title?: string }>()
+  if (body.title) {
+    await sessionStore.updateTitle(id, body.title)
+  }
+  return c.json({ ok: true })
+})
+
 app.get("/api/files/:sessionId/:filename", async (c) => {
   const { sessionId, filename } = c.req.param()
   const filePath = `${process.env.HOME || "~"}/.datawhale/plots/${sessionId}/${filename}`
