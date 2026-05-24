@@ -338,6 +338,7 @@ export class Agent {
               name: event.name,
               arguments: "",
             })
+            this.emit({ type: "tool_call_start", toolCallId: event.id, toolName: event.name, args: {} })
             break
 
           case "tool_call_delta":
@@ -364,6 +365,7 @@ export class Agent {
                 arguments: event.arguments,
               }
             }
+            this.emit({ type: "tool_call_end", toolCallId: event.id, result: { isError: false, result: { content: "" }, agentState: this.state, toolCallId: event.id, toolName: event.name, args: {} } })
             break
 
           case "error":

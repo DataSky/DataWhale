@@ -107,7 +107,7 @@ app.post("/api/chat", async (c) => {
 
     agent.subscribe((event: AgentEvent) => {
       // Map agent events to SSE
-      const data: Record<string, unknown> = { type: event.type }
+      const data: Record<string, unknown> = { type: event.type, sessionId }
 
       switch (event.type) {
         case "message_update":
