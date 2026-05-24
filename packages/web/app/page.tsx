@@ -344,17 +344,17 @@ export default function Home() {
                       {msg.tools && msg.tools.length > 0 ? (
                         <div className="mb-3 space-y-1">
                           {msg.tools.map(function(tc) {
-                            var hasDetail = tc.preview && tc.preview.length > 20
+                            var hasDetail = tc.detail && tc.detail.length > 20
                             return (
                               <details key={tc.id} className="text-xs">
                                 <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
-                                  <span className={tc.status === "done" ? "text-success" : tc.status === "error" ? "text-error" : "text-warning"}>✓</span>
+                                  <span className="text-success">✓</span>
                                   <span className="text-text-secondary font-medium">{tc.name}</span>
-                                  {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span> : null}
+                                  {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview}</span> : null}
                                   {hasDetail ? <span className="text-text-muted ml-auto text-[10px]">▸</span> : null}
                                 </summary>
                                 {hasDetail && (
-                                  <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed">{tc.preview}</div>
+                                  <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-96 overflow-y-auto border border-border leading-relaxed" style={{overflowY: "scroll"}}>{tc.detail}</div>
                                 )}
                               </details>
                             )
