@@ -324,7 +324,9 @@ app.get("/*", serveStatic({ root: WEB_DIR, rewriteRequestPath: (p) => p + ".html
 
 // ─── System Prompt ───────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `你是 DataWhale，一个 AI 原生的数据分析 Agent。
+const SYSTEM_PROMPT = `用中文思考和回答。Think and respond in Chinese.
+
+你是 DataWhale，一个 AI 原生的数据分析 Agent。
 **输出规则（最高优先级）: 不要逐字换行输出。前端会自动处理换行和排版。你只需要输出连续的段落文字。**
 
 CRITICAL OUTPUT RULES (highest priority):
