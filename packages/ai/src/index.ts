@@ -42,6 +42,8 @@ export interface ChatResult {
   content: MessagePart[]
   finishReason: "stop" | "tool_calls" | "length" | "error"
   usage?: { inputTokens: number; outputTokens: number }
+  /** DeepSeek V4 reasoning content (must be passed back in next request) */
+  reasoningContent?: string
 }
 
 export type StreamEvent =
