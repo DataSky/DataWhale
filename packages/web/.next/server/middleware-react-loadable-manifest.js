@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST='{"app/page.tsx -> react-markdown":{"id":8366,"files":["static/chunks/366.58ac83ae3476af80.js"]}}';
+self.__REACT_LOADABLE_MANIFEST='{"app/page.tsx -> react-markdown":{"id":2683,"files":["static/chunks/813.93914dc742a11cea.js","static/chunks/683.9ccb7712ff8cb2b3.js"]},"app/page.tsx -> rehype-highlight":{"id":9513,"files":["static/chunks/813.93914dc742a11cea.js","static/chunks/513.7a58b11748977ed8.js"]}}';

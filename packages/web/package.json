@@ -8,11 +8,13 @@
     "start": "next start -p 3001"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
     "next": "^15",
     "react": "^19",
     "react-dom": "^19",
     "react-markdown": "^10",
-    "recharts": "^2"
+    "recharts": "^2",
+    "rehype-highlight": "^7.0.2"
   },
   "devDependencies": {
     "@types/node": "^20",

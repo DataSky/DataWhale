@@ -2,8 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import dynamic from "next/dynamic"
+import "highlight.js/styles/atom-one-dark.css"
 
 const ReactMarkdown = dynamic(() => import("react-markdown"), { ssr: false })
+const rehypeHighlightPromise = import("rehype-highlight").then(m => m.default)
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,13 @@ async function fetchJSON(url: string, init?: RequestInit) {
   return res.json()
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatTime(ts: number): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -55,8 +64,16 @@ export default function Home() {
   const [toolCalls, setToolCalls] = useState<ToolCallState[]>([])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameTitle, setRenameTitle] = useState("")
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
+  const [editText, setEditText] = useState("")
+  const [rehypeHighlight, setRehypeHighlight] = useState<any>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [feedbacks, setFeedbacks] = useState<Record<string, "up" | "down">>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load rehype-highlight on client
+  useEffect(() => { rehypeHighlightPromise.then(setRehypeHighlight) }, [])
 
   // Load sessions
   const loadSessions = useCallback(async () => {
@@ -95,31 +112,41 @@ export default function Home() {
     loadSessions()
   }, [activeSessionId, loadSessions])
 
-  // Rename session
+  // Rename
   const startRename = useCallback((id: string, title: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setRenamingId(id)
-    setRenameTitle(title)
+    e.stopPropagation(); setRenamingId(id); setRenameTitle(title)
   }, [])
-
   const submitRename = useCallback(async () => {
     if (!renamingId) return
-    try {
-      await fetchJSON(`/api/sessions/${renamingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: renameTitle }),
-      })
-    } catch {}
-    setRenamingId(null)
-    loadSessions()
+    try { await fetchJSON(`/api/sessions/${renamingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: renameTitle }) }) } catch {}
+    setRenamingId(null); loadSessions()
   }, [renamingId, renameTitle, loadSessions])
 
-  // Send message
-  const send = useCallback(async () => {
-    const text = input.trim()
+  // Copy
+  const copyMessage = useCallback((text: string, id: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    }).catch(() => {})
+  }, [])
+
+  // Regenerate
+  const regenerate = useCallback(async () => {
+    const lastUserIdx = [...messages].reverse().findIndex(m => m.role === "user")
+    if (lastUserIdx === -1) return
+    const userMsg = messages[messages.length - 1 - lastUserIdx]
+    const msgs = messages.slice(0, messages.length - 1 - lastUserIdx)
+    setMessages(msgs)
+    setInput(userMsg.content)
+    setTimeout(() => send(userMsg.content), 100)
+  }, [messages])
+
+  // Send
+  const send = useCallback(async (overrideText?: string) => {
+    const text = (overrideText || input).trim()
     if (!text || streaming) return
     setInput("")
+    setEditingMsgId(null)
 
     const userMsg: Message = { id: `msg_${Date.now()}`, role: "user", content: text, timestamp: Date.now() }
     const newMessages = [...messages, userMsg]
@@ -139,9 +166,7 @@ export default function Home() {
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ""
-      let thinking = ""
-      let content = ""
+      let buffer = "", thinking = "", content = ""
       let calls: ToolCallState[] = []
       let newSessionId = activeSessionId
 
@@ -158,41 +183,28 @@ export default function Home() {
               const ev = JSON.parse(line.slice(6))
               switch (ev.type) {
                 case "message_update":
-                  content += ev.delta
-                  setStreamingText(content)
-                  break
+                  content += ev.delta; setStreamingText(content); break
                 case "reasoning_update":
-                  thinking += ev.delta
-                  setStreamingThinking(thinking)
-                  break
+                  thinking += ev.delta; setStreamingThinking(thinking); break
                 case "tool_call_start":
-                  calls = [...calls, { id: ev.toolCallId, name: ev.toolName, status: "running" }]
-                  setToolCalls([...calls])
-                  break
+                  calls = [...calls, { id: ev.toolCallId, name: ev.toolName, status: "running" }]; setToolCalls([...calls]); break
                 case "tool_call_end":
-                  calls = calls.map(c => c.id === ev.toolCallId ? { ...c, status: ev.isError ? "error" as const : "done" as const, preview: ev.content } : c)
-                  setToolCalls([...calls])
-                  break
+                  calls = calls.map(c => c.id === ev.toolCallId ? { ...c, status: ev.isError ? "error" as const : "done" as const, preview: ev.content } : c); setToolCalls([...calls]); break
                 case "agent_end":
-                  newSessionId = ev.sessionId || newSessionId
-                  break
+                  newSessionId = ev.sessionId || newSessionId; break
               }
             } catch {}
           }
         }
       }
 
-      const assistantMsg: Message = {
-        id: `msg_${Date.now()}`,
-        role: "assistant",
-        content,
+      setMessages([...newMessages, {
+        id: `msg_${Date.now()}`, role: "assistant", content,
         thinking: thinking || undefined,
         toolCalls: calls.length > 0 ? calls : undefined,
         timestamp: Date.now(),
-      }
-      setMessages([...newMessages, assistantMsg])
-      setStreamingText("")
-      setStreamingThinking("")
+      }])
+      setStreamingText(""); setStreamingThinking("")
       if (newSessionId) setActiveSessionId(newSessionId)
       loadSessions()
     } catch (err: any) {
@@ -208,8 +220,22 @@ export default function Home() {
 
   const newSession = () => { setActiveSessionId(null); setMessages([]); inputRef.current?.focus() }
 
-  const copyMessage = (text: string) => {
-    navigator.clipboard.writeText(text).catch(() => {})
+  // Edit message
+  const startEdit = (msg: Message) => {
+    setEditingMsgId(msg.id)
+    setEditText(msg.content)
+  }
+  const submitEdit = () => {
+    const text = editText.trim()
+    if (!text) return
+    const idx = messages.findIndex(m => m.id === editingMsgId)
+    if (idx === -1) return
+    const updated = [...messages]
+    updated[idx] = { ...updated[idx], content: text }
+    // Remove all messages after the edited one and resend
+    setMessages(updated.slice(0, idx + 1))
+    setEditingMsgId(null)
+    setTimeout(() => send(text), 100)
   }
 
   return (
@@ -230,15 +256,10 @@ export default function Home() {
               }`}
             >
               {renamingId === s.id ? (
-                <input
-                  value={renameTitle}
-                  onChange={e => setRenameTitle(e.target.value)}
-                  onBlur={submitRename}
+                <input value={renameTitle} onChange={e => setRenameTitle(e.target.value)} onBlur={submitRename}
                   onKeyDown={e => e.key === "Enter" && submitRename()}
                   className="w-full bg-bg-tertiary border border-accent rounded px-1.5 py-0.5 text-xs text-text-primary outline-none"
-                  autoFocus
-                  onClick={e => e.stopPropagation()}
-                />
+                  autoFocus onClick={e => e.stopPropagation()} />
               ) : (
                 <>
                   <div className="truncate font-medium">{s.title || "Untitled"}</div>
@@ -275,7 +296,7 @@ export default function Home() {
               <div className="text-center max-w-md">
                 <div className="text-4xl mb-4">🦈</div>
                 <h2 className="text-xl font-semibold mb-2 text-text-primary">DataWhale</h2>
-                <p className="text-text-secondary text-sm">Ask questions about your data. Load CSV/JSON files, run SQL queries, create charts, and discover insights — all through natural conversation.</p>
+                <p className="text-text-secondary text-sm">Ask questions about your data. Load CSV/JSON files, run SQL queries, create charts, and discover insights.</p>
                 <div className="mt-6 flex flex-wrap gap-2 justify-center">
                   {["Analyze sales by region", "Find trends over time", "Check data quality", "Create a bar chart"].map(s => (
                     <button key={s} onClick={() => { setInput(s); inputRef.current?.focus() }} className="px-3 py-1.5 text-xs rounded-full bg-bg-tertiary text-text-secondary hover:bg-bg-hover transition-colors">{s}</button>
@@ -286,77 +307,102 @@ export default function Home() {
           )}
 
           {/* Messages */}
-          {messages.map(msg => (
+          {messages.map((msg, idx) => (
             <div key={msg.id} className={`msg-enter flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] min-w-0 ${msg.role === "user" ? "bg-accent-muted text-text-primary rounded-2xl rounded-br-md px-4 py-2.5" : ""}`}>
                 
-                {/* ── Thinking (collapsed after done, expanded during review) ── */}
-                {msg.thinking && (
-                  <details className="mb-2 group" open={!!expandedThinking[msg.id]}>
-                    <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5" onClick={(e) => {
-                      e.preventDefault()
-                      setExpandedThinking(p => ({ ...p, [msg.id]: !p[msg.id] }))
-                    }}>
-                      <span className="text-[10px]">{expandedThinking[msg.id] ? "▾" : "▸"}</span>
-                      <span>Thought for {(msg.thinking.length / 4).toFixed(0)}s</span>
-                    </summary>
-                    <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border leading-relaxed">
-                      {msg.thinking}
-                    </div>
-                  </details>
-                )}
+                {/* ── Edit mode ── */}
+                {editingMsgId === msg.id ? (
+                  <div className="flex gap-2">
+                    <textarea value={editText} onChange={e => setEditText(e.target.value)}
+                      className="flex-1 bg-bg-tertiary border border-accent rounded px-3 py-2 text-sm text-text-primary outline-none resize-none" rows={2} autoFocus />
+                    <button onClick={submitEdit} className="px-3 py-1 bg-accent text-white rounded text-xs">Send</button>
+                    <button onClick={() => setEditingMsgId(null)} className="px-3 py-1 bg-bg-tertiary text-text-secondary rounded text-xs">Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    {/* ── Thinking ── */}
+                    {msg.thinking && (
+                      <details className="mb-2 group" open={!!expandedThinking[msg.id]}>
+                        <summary className="text-xs text-text-muted hover:text-text-secondary cursor-pointer select-none flex items-center gap-1.5" onClick={(e) => {
+                          e.preventDefault()
+                          setExpandedThinking(p => ({ ...p, [msg.id]: !p[msg.id] }))
+                        }}>
+                          <span className="text-[10px]">{expandedThinking[msg.id] ? "▾" : "▸"}</span>
+                          <span>Thought for {(msg.thinking.length / 4).toFixed(0)}s</span>
+                        </summary>
+                        <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border leading-relaxed">
+                          {msg.thinking}
+                        </div>
+                      </details>
+                    )}
 
-                {/* ── Tool calls (inline between thinking and content) ── */}
-                {msg.toolCalls && msg.toolCalls.length > 0 && (
-                  <div className="mb-3 space-y-1">
-                    {msg.toolCalls.map(tc => (
-                      <div key={tc.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
-                        <span className={tc.status === "done" ? "text-success" : tc.status === "error" ? "text-error" : "text-warning"}>
-                          {tc.status === "running" ? "⏳" : tc.status === "done" ? "✓" : "✗"}
-                        </span>
-                        <span className="text-text-secondary font-medium">{tc.name}</span>
-                        {tc.preview && <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span>}
+                    {/* ── Tool calls ── */}
+                    {msg.toolCalls && msg.toolCalls.length > 0 && (
+                      <div className="mb-3 space-y-1">
+                        {msg.toolCalls.map(tc => (
+                          <div key={tc.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
+                            <span className={tc.status === "done" ? "text-success" : tc.status === "error" ? "text-error" : "text-warning"}>
+                              {tc.status === "running" ? "⏳" : tc.status === "done" ? "✓" : "✗"}
+                            </span>
+                            <span className="text-text-secondary font-medium">{tc.name}</span>
+                            {tc.preview && <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {/* ── Content ── */}
-                {msg.content && (
-                  <div className="prose prose-sm max-w-none text-sm leading-relaxed">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
-                )}
+                    {/* ── Content ── */}
+                    {msg.content && (
+                      <div className="prose prose-sm max-w-none text-sm leading-relaxed">
+                        <ReactMarkdown rehypePlugins={rehypeHighlight ? [rehypeHighlight] : []}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
 
-                {/* ── Copy button ── */}
-                {msg.role === "assistant" && msg.content && (
-                  <div className="mt-1.5 opacity-0 hover:opacity-100 transition-opacity">
-                    <button onClick={() => copyMessage(msg.content)} className="text-xs text-text-muted hover:text-text-secondary">📋 Copy</button>
-                  </div>
+                    {/* ── Action bar ── */}
+                    <div className={`mt-1.5 flex items-center gap-2 text-xs ${msg.role === "assistant" ? "" : "justify-end"}`}>
+                      <span className="text-text-muted/60">{formatTime(msg.timestamp)}</span>
+                      {msg.role === "assistant" && msg.content && (
+                        <>
+                          <button onClick={() => copyMessage(msg.content, msg.id)}
+                            className="text-text-muted hover:text-text-secondary transition-colors">
+                            {copiedId === msg.id ? "✓ Copied" : "📋"}
+                          </button>
+                          <button onClick={() => setFeedbacks(p => ({ ...p, [msg.id]: p[msg.id] === "up" ? undefined as any : "up" }))}
+                            className={`transition-colors ${feedbacks[msg.id] === "up" ? "text-success" : "text-text-muted hover:text-success"}`}>👍</button>
+                          <button onClick={() => setFeedbacks(p => ({ ...p, [msg.id]: p[msg.id] === "down" ? undefined as any : "down" }))}
+                            className={`transition-colors ${feedbacks[msg.id] === "down" ? "text-error" : "text-text-muted hover:text-error"}`}>👎</button>
+                          {idx === messages.length - 1 && (
+                            <button onClick={regenerate} className="text-text-muted hover:text-text-secondary transition-colors">🔄</button>
+                          )}
+                        </>
+                      )}
+                      {msg.role === "user" && (
+                        <button onClick={() => startEdit(msg)} className="text-text-muted hover:text-text-secondary transition-colors">✏️</button>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
           ))}
 
-          {/* ── Streaming block (thinking + tools + text, interleaved naturally) ── */}
+          {/* ── Streaming block ── */}
           {streaming && (
             <div className="msg-enter flex justify-start">
               <div className="max-w-[85%] min-w-0 space-y-2">
-                
-                {/* Live thinking */}
                 {streamingThinking && (
                   <details open className="group">
                     <summary className="text-xs text-text-muted cursor-pointer select-none flex items-center gap-1.5">
-                      <span className="text-[10px]">▾</span>
-                      <span>Thinking…</span>
+                      <span className="text-[10px]">▾</span><span>Thinking…</span>
                     </summary>
                     <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border leading-relaxed">
                       {streamingThinking}
                     </div>
                   </details>
                 )}
-
-                {/* Tool calls in progress */}
                 {toolCalls.map(tc => (
                   <div key={tc.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
                     <span className={tc.status === "done" ? "text-success" : "text-warning"}>
@@ -366,16 +412,14 @@ export default function Home() {
                     {tc.preview && <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span>}
                   </div>
                 ))}
-
-                {/* Streaming text */}
                 {streamingText && (
                   <div className="text-sm leading-relaxed text-text-primary">
-                    <ReactMarkdown>{streamingText}</ReactMarkdown>
+                    <ReactMarkdown rehypePlugins={rehypeHighlight ? [rehypeHighlight] : []}>
+                      {streamingText}
+                    </ReactMarkdown>
                     <span className="typing-cursor" />
                   </div>
                 )}
-
-                {/* Loading dots */}
                 {!streamingText && !streamingThinking && toolCalls.length === 0 && (
                   <div className="flex gap-1.5 py-2">
                     <div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -391,21 +435,12 @@ export default function Home() {
         {/* ── Input ── */}
         <div className="p-4 border-t border-border shrink-0">
           <div className="flex gap-2 max-w-3xl mx-auto">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about your data..."
-              rows={3}
+            <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown} placeholder="Ask about your data..." rows={3}
               className="flex-1 bg-bg-secondary border border-border rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent transition-colors min-h-[44px]"
-              disabled={streaming}
-            />
-            <button
-              onClick={send}
-              disabled={!input.trim() || streaming}
-              className="px-6 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 self-end"
-            >
+              disabled={streaming} />
+            <button onClick={() => send()} disabled={!input.trim() || streaming}
+              className="px-6 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 self-end">
               {streaming ? "···" : "Send"}
             </button>
           </div>
