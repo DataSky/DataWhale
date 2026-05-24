@@ -371,6 +371,18 @@ export default function Home() {
                       ) : null}
                       {/* Content */}
                       {msg.content ? <MarkdownView content={msg.content} /> : null}
+                      {/* Assistant: action bar inside content container */}
+                      {msg.role === "assistant" ? (
+                        <div className="mt-1.5 flex items-center gap-2 text-xs">
+                          <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
+                          {msg.content ? (
+                            <span>
+                              <button onClick={function() { copyMessage(msg.content, msg.id) }} className="text-text-muted hover:text-text-secondary">{copiedId === msg.id ? "✓" : "📋"}</button>
+                              {idx === messages.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                    )}
                  </div>
@@ -380,18 +392,7 @@ export default function Home() {
                      <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
                      <button onClick={function() { startEdit(msg) }} className="text-text-muted hover:text-text-secondary">✏️</button>
                    </div>
-                 ) : (
-                   /* Assistant: action bar inside */
-                   <div className="mt-1.5 flex items-center gap-2 text-xs">
-                     <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
-                     {msg.content ? (
-                       <span>
-                         <button onClick={function() { copyMessage(msg.content, msg.id) }} className="text-text-muted hover:text-text-secondary">{copiedId === msg.id ? "✓" : "📋"}</button>
-                         {idx === messages.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
-                       </span>
-                     ) : null}
-                   </div>
-                 )}
+                 ) : null}
                </div>
              )
           })}
