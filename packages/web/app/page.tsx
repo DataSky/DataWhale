@@ -369,7 +369,7 @@ export default function Home() {
                       {msg.content ? <MarkdownView content={msg.content} /> : null}
                       {/* Action bar */}
                       <div className={"mt-1.5 flex items-center gap-2 text-xs " + (msg.role === "assistant" ? "" : "justify-end")}>
-                        <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
+                        {msg.role === "assistant" ? null : <span className="text-text-muted/60">{formatTime(msg.ts)}</span>}
                         {msg.role === "assistant" && msg.content ? (
                           <span>
                             <button onClick={function() { copyMessage(msg.content, msg.id) }} className="text-text-muted hover:text-text-secondary">{copiedId === msg.id ? "✓" : "📋"}</button>
