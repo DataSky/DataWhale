@@ -165,6 +165,8 @@ export class SessionStore {
       const content = typeof msg.content === "string"
         ? msg.content
         : (Array.isArray(msg.content) ? msg.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("\n") : "")
+      // Collapse one-word-per-line patterns (DeepSeek V4 quirk)
+      const collapsed = collapseNewlines(content)
       // Extract tool calls into meta for frontend display
       const toolCalls = Array.isArray(msg.content)
         ? msg.content.filter(function(p: any) { return p && p.type === "tool_call" }).map(function(p: any) { return { id: p.id, name: p.name, arguments: p.arguments } })
@@ -172,7 +174,7 @@ export class SessionStore {
       const meta = { ...(msg.meta || {}), ...(toolCalls.length > 0 ? { toolCalls } : {}) }
       const metaJson = JSON.stringify(meta)
       const thinking = msg.thinking || null
-      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp || now, metaJson])
+      insertStmt.run([sessionId, msg.role, collapsed, thinking, msg.timestamp || now, metaJson])
     }
     insertStmt.free()
 
@@ -212,4 +214,29 @@ export class SessionStore {
     db.run("UPDATE sessions SET title = ? WHERE id = ?", [title, sessionId])
     await this.save()
   }
+}
+
+// Heuristic: collapse one-word-per-line to continuous prose
+// When >15% of characters are newlines and most newlines are single (not double),
+// merge single \n into spaces while preserving \n\n as paragraph breaks.
+function collapseNewlines(text: string): string {
+  if (!text) return text
+  const newlineCount = (text.match(/\n/g) || []).length
+  const totalChars = text.length
+  if (newlineCount === 0 || totalChars === 0) return text
+  
+  // Only process if more than 10% of chars are newlines (heuristic for word-per-line)
+  const newlineRatio = newlineCount / totalChars
+  if (newlineRatio < 0.10) return text
+  
+  // Merge: single \n → space, \n\n kept as paragraph break
+  // Strategy: replace \n that are NOT part of \n\n sequences
+  const result = text
+    .replace(/\n\n/g, "\x00")  // Temporarily mark paragraph breaks
+    .replace(/\n/g, " ")        // Single newlines → space
+    .replace(/\x00/g, "\n\n")   // Restore paragraph breaks
+    .replace(/  +/g, " ")       // Collapse multiple spaces
+    .trim()
+  
+  return result
 }
