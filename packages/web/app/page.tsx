@@ -318,6 +318,10 @@ export default function Home() {
                     </div>
                   ) : (
                     <div>
+                      {/* Timestamp — subtle, top of message */}
+                      {msg.role === "assistant" && msg.ts ? (
+                        <div className="text-[10px] text-text-muted/50 mb-1.5">{formatTime(msg.ts)}</div>
+                      ) : null}
                       {/* Thinking */}
                       {msg.thinking ? (
                         expandedThinking[msg.id] ? (

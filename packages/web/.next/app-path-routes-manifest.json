@@ -1,7 +1,7 @@
 {
-  "/icon.svg/route": "/icon.svg",
   "/_not-found/page": "/_not-found",
+  "/icon.svg/route": "/icon.svg",
   "/page": "/",
-  "/dashboard/page": "/dashboard",
-  "/settings/page": "/settings"
+  "/settings/page": "/settings",
+  "/dashboard/page": "/dashboard"
 }
