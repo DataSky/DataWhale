@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* highlight.js dark theme */
+@import "highlight.js/styles/atom-one-dark.css";
+
 body {
   background: #1a1d23;
   color: #e8eaed;

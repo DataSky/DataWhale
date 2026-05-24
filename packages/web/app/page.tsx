@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import dynamic from "next/dynamic"
-import "highlight.js/styles/atom-one-dark.css"
 
 const ReactMarkdown = dynamic(() => import("react-markdown"), { ssr: false })
 const rehypeHighlightPromise = import("rehype-highlight").then(m => m.default)
