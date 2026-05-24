@@ -226,7 +226,15 @@ export default function Home() {
 
   const handleKeyDown = function(e: React.KeyboardEvent) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }
   const toggleMenu = function(id: string, e: React.MouseEvent) { e.stopPropagation(); setMenuOpen(menuOpen === id ? null : id) }
-  const formatTime = function(ts: number) { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }
+  const formatTime = function(ts: number) {
+    var d = new Date(ts)
+    var y = d.getFullYear()
+    var m = ("0" + (d.getMonth() + 1)).slice(-2)
+    var day = ("0" + d.getDate()).slice(-2)
+    var h = ("0" + d.getHours()).slice(-2)
+    var min = ("0" + d.getMinutes()).slice(-2)
+    return y + "-" + m + "-" + day + " " + h + ":" + min
+  }
 
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary" style={{ fontFamily: "system-ui, sans-serif" }}
