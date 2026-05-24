@@ -195,7 +195,7 @@ app.get("/api/sessions/:id", async (c) => {
   const id = c.req.param("id")
   const session = await sessionStore.getSession(id)
   if (!session) return c.json({ error: "not found" }, 404)
-  const messages = await sessionStore.getMessages(id)
+  const messages = await sessionStore.loadMessages(id)
   return c.json({ ...session, messages })
 })
 
