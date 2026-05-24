@@ -328,6 +328,7 @@ export class Agent {
             break
 
           case "reasoning_delta":
+            reasoningContent += event.text
             this.emit({ type: "reasoning_update", delta: event.text })
             break
 
