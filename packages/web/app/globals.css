@@ -2,33 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
-/* highlight.js dark theme */
 @import "highlight.js/styles/atom-one-dark.css";
 
+:root {
+  --bg-primary: #1a1d23;
+  --bg-secondary: #22252b;
+  --bg-tertiary: #2a2d35;
+  --bg-hover: #32353e;
+  --border: #3a3d45;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a8;
+  --text-muted: #6b7280;
+  --accent: #5b8def;
+  --accent-hover: #7ba5f5;
+  --accent-muted: #2d4a7a;
+  --success: #34d399;
+  --error: #f87171;
+  --warning: #fbbf24;
+}
+
+.light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f3f4f6;
+  --bg-tertiary: #e5e7eb;
+  --bg-hover: #d1d5db;
+  --border: #d1d5db;
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-muted: #6b7280;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-muted: #dbeafe;
+  --success: #059669;
+  --error: #dc2626;
+  --warning: #d97706;
+}
+
 body {
-  background: #1a1d23;
-  color: #e8eaed;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
-/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #3a3d45; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* Message animation */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .msg-enter { animation: fadeIn 0.2s ease-out; }
 
-/* Typing cursor */
 .typing-cursor::after {
   content: "▊";
   animation: blink 1s infinite;
-  color: #5b8def;
+  color: var(--accent);
 }
 @keyframes blink {
   0%, 50% { opacity: 1; }

@@ -52,6 +52,9 @@ export default function Home() {
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; path: string; size: number }[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [selectedModel, setSelectedModel] = useState("deepseek")
+  const [theme, setTheme] = useState<"dark" | "light">("dark")
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -62,6 +65,11 @@ export default function Home() {
     try { setSessions(await fetchJSON("/api/sessions")) } catch {}
   }, [])
   useEffect(() => { loadSessions() }, [loadSessions])
+
+  // Theme
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light")
+  }, [theme])
 
   const filteredSessions = useMemo(() =>
     searchQuery ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase())) : sessions,
@@ -145,7 +153,7 @@ export default function Home() {
     try {
       const res = await fetch(`${API}/api/chat`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, sessionId: activeSessionId || undefined, files: uploadedFiles.map(f => f.path) }),
+        body: JSON.stringify({ prompt: text, sessionId: activeSessionId || undefined, model: selectedModel, files: uploadedFiles.map(f => f.path) }),
       })
       if (!res.ok || !res.body) throw new Error("Connection failed")
       const reader = res.body.getReader(); const decoder = new TextDecoder()
@@ -191,6 +199,7 @@ export default function Home() {
   return (
     <div className="flex h-screen" onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={e => { e.preventDefault(); setDragOver(false) }} onDrop={handleDrop}>
       {/* ── Sidebar ──────────────────────────────────────── */}
+      {sidebarOpen && (
       <aside className="w-64 bg-bg-secondary border-r border-border flex flex-col shrink-0">
         <div className="p-3 border-b border-border space-y-2">
           <button onClick={newSession} className="w-full py-2 px-4 bg-accent text-white rounded-lg font-medium hover:bg-accent-hover transition-colors text-sm">+ New Analysis</button>
@@ -238,12 +247,21 @@ export default function Home() {
           </div>
         )}
       </aside>
+      )}
 
       {/* ── Main Chat ────────────────────────────────────── */}
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-12 border-b border-border flex items-center px-4 shrink-0 gap-3">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-text-muted hover:text-text-secondary text-sm">☰</button>
           <h1 className="text-sm font-semibold text-text-secondary">🦈 DataWhale</h1>
           {activeSessionId && <span className="text-xs text-text-muted truncate">{sessions.find(s => s.id === activeSessionId)?.title || activeSessionId.slice(0, 12)}</span>}
+          <div className="flex-1" />
+          <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
+            className="bg-bg-tertiary border border-border rounded-lg px-2 py-1 text-xs text-text-primary outline-none">
+            <option value="deepseek">DeepSeek V4 Pro</option>
+            <option value="deepseek-flash">DeepSeek V4 Flash</option>
+          </select>
+          <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} className="text-text-muted hover:text-text-secondary text-sm">{theme === "dark" ? "☀️" : "🌙"}</button>
         </header>
 
         {/* Drag overlay */}
