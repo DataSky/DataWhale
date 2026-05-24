@@ -371,22 +371,29 @@ export default function Home() {
                       ) : null}
                       {/* Content */}
                       {msg.content ? <MarkdownView content={msg.content} /> : null}
-                      {/* Action bar */}
-                      <div className={"mt-1.5 flex items-center gap-2 text-xs " + (msg.role === "assistant" ? "" : "justify-end")}>
-                        <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
-                        {msg.role === "assistant" && msg.content ? (
-                          <span>
-                            <button onClick={function() { copyMessage(msg.content, msg.id) }} className="text-text-muted hover:text-text-secondary">{copiedId === msg.id ? "✓" : "📋"}</button>
-                            {idx === messages.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
-                          </span>
-                        ) : null}
-                        {msg.role === "user" ? <button onClick={function() { startEdit(msg) }} className="text-text-muted hover:text-text-secondary">✏️</button> : null}
-                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            )
+                   )}
+                 </div>
+                 {/* User message: action bar outside bubble */}
+                 {msg.role === "user" ? (
+                   <div className="flex justify-end gap-2 text-xs mt-1">
+                     <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
+                     <button onClick={function() { startEdit(msg) }} className="text-text-muted hover:text-text-secondary">✏️</button>
+                   </div>
+                 ) : (
+                   /* Assistant: action bar inside */
+                   <div className="mt-1.5 flex items-center gap-2 text-xs">
+                     <span className="text-text-muted/60">{formatTime(msg.ts)}</span>
+                     {msg.content ? (
+                       <span>
+                         <button onClick={function() { copyMessage(msg.content, msg.id) }} className="text-text-muted hover:text-text-secondary">{copiedId === msg.id ? "✓" : "📋"}</button>
+                         {idx === messages.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
+                       </span>
+                     ) : null}
+                   </div>
+                 )}
+               </div>
+             )
           })}
 
           {/* Streaming */}
