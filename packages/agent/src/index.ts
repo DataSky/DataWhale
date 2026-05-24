@@ -10,6 +10,8 @@
 
 import type { Message, MessagePart, ToolDef, ToolResultPart } from "@datawhale/ai"
 import { chatStream, resolveModel, type ModelConfig } from "@datawhale/ai"
+import { makeQuery } from "./query-types.js"
+import type { Span, Query, ThinkingSpan, ToolCallSpan, TextSpan } from "./query-types.js"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -155,6 +157,9 @@ function compressToolContent(content: string): string {
 // ─── Agent Class ─────────────────────────────────────────────────────────────
 
 type EventListener = (event: AgentEvent) => void
+
+/** Merge consecutive assistant + tool_result messages into one unified assistant message */
+function mergeAssistantMessages(messages: AgentMessage[]): AgentMessage[] {
 
 export class Agent {
   public state: AgentState
