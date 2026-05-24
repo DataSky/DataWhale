@@ -114,6 +114,40 @@ export type AgentEvent =
   | { type: "tool_call_end"; toolCallId: string; result: ToolCallResult }
   | { type: "error"; message: string; recoverable: boolean }
 
+// ─── Tool Content Compressor ────────────────────────────────────────────────
+
+/**
+ * Compress excessive newlines in tool result content to prevent
+ * format contagion — where LLM mimics the high newline density of
+ * table/formatted outputs and starts emitting one-word-per-line text.
+ * 
+ * Preserves table structure (Unicode box-drawing chars) while
+ * collapsing unnecessary blank lines in non-table content.
+ */
+function compressToolContent(content: string): string {
+  if (!content || content.length < 50) return content
+
+  // Detect if content contains table formatting (box-drawing characters)
+  const hasTable = /[┌┬┐├┼┤└┴┘│]/.test(content)
+
+  if (hasTable) {
+    // For table content: preserve structure, but remove consecutive blank lines
+    // (3+ newlines → 2 newlines)
+    return content.replace(/\n{3,}/g, "\n\n")
+  }
+
+  // For non-table content: aggressive newline compression
+  // Replace 2+ newlines with a single newline
+  let compressed = content.replace(/\n{2,}/g, "\n")
+
+  // Truncate to 3000 chars max to limit context pollution
+  if (compressed.length > 3000) {
+    compressed = compressed.slice(0, 3000) + `\n... (truncated from ${content.length} chars)`
+  }
+
+  return compressed
+}
+
 // ─── Agent Class ─────────────────────────────────────────────────────────────
 
 type EventListener = (event: AgentEvent) => void
@@ -374,13 +408,16 @@ export class Agent {
 
     // Add tool results to messages
     for (const tr of toolResults) {
+      const rawContent = tr.isError ? `Error: ${tr.errorMessage}` : tr.result.content
+      // Compress newline density to prevent format contagion in LLM output
+      const compressedContent = compressToolContent(rawContent)
       const toolResultMsg: AgentMessage = {
         role: "tool_result",
         content: [
           {
             type: "tool_result",
             toolCallId: tr.toolCallId,
-            content: tr.isError ? `Error: ${tr.errorMessage}` : tr.result.content,
+            content: compressedContent,
             isError: tr.isError,
           } as MessagePart,
         ],
