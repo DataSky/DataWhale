@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import ReactMarkdown from "react-markdown"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -342,8 +341,8 @@ export default function Home() {
                 )}
 
                 {/* Content */}
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm leading-relaxed">
+                  {msg.content}
                 </div>
               </div>
             </div>
@@ -379,8 +378,8 @@ export default function Home() {
 
                 {/* Streaming text */}
                 {streamingText && (
-                  <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown>{streamingText}</ReactMarkdown>
+                  <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm leading-relaxed">
+                    {streamingText}
                     <span className="typing-cursor" />
                   </div>
                 )}
