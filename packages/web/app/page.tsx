@@ -1,6 +1,10 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
+import dynamic from "next/dynamic"
+
+// Dynamic import to avoid SSR hydration issues
+const ReactMarkdown = dynamic(() => import("react-markdown"), { ssr: false })
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -341,8 +345,8 @@ export default function Home() {
                 )}
 
                 {/* Content */}
-                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm leading-relaxed">
-                  {msg.content}
+                <div className="prose prose-sm max-w-none text-sm leading-relaxed">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
               </div>
             </div>
@@ -378,8 +382,8 @@ export default function Home() {
 
                 {/* Streaming text */}
                 {streamingText && (
-                  <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm leading-relaxed">
-                    {streamingText}
+                  <div className="prose prose-sm max-w-none text-sm leading-relaxed">
+                    <ReactMarkdown>{streamingText}</ReactMarkdown>
                     <span className="typing-cursor" />
                   </div>
                 )}
@@ -404,14 +408,14 @@ export default function Home() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask about your data..."
-              rows={1}
-              className="flex-1 bg-bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent transition-colors"
+              rows={3}
+              className="flex-1 bg-bg-secondary border border-border rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent transition-colors min-h-[44px]"
               disabled={streaming}
             />
             <button
               onClick={send}
               disabled={!input.trim() || streaming}
-              className="px-5 py-2.5 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+              className="px-6 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 self-end"
             >
               {streaming ? "···" : "Send"}
             </button>

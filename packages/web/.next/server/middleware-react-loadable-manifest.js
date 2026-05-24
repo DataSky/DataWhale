@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{}";
+self.__REACT_LOADABLE_MANIFEST='{"app/page.tsx -> react-markdown":{"id":8366,"files":["static/chunks/366.58ac83ae3476af80.js"]}}';
