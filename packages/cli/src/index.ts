@@ -6,10 +6,10 @@
  *        dw --db ./mydb.duckdb "show me the schema"
  */
 
-import { Agent, SessionStore } from "@datawhale/agent"
-import type { SessionMeta } from "@datawhale/agent"
-import { AnthropicProvider, OpenAICompatibleProvider, registerProvider, resolveModel } from "@datawhale/ai"
-import { DuckDBTools, DataIOTools } from "@datawhale/tools"
+import { Agent, SessionStore, TraceStore, KnowledgeStore } from "@datawhale/agent"
+import type { SessionMeta, TraceRecord, KnowledgeEntry } from "@datawhale/agent"
+import { AnthropicProvider, OpenAICompatibleProvider, registerProvider, resolveModel, getProvider } from "@datawhale/ai"
+import { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext } from "@datawhale/tools"
 import { ExtensionRegistry, loadExtension } from "@datawhale/extensions"
 import type { AgentTool, AgentEvent } from "@datawhale/agent"
 import type { Extension } from "@datawhale/extensions"
@@ -106,7 +106,8 @@ Usage: dw [options] [prompt]
 
 Options:
   -m, --model <model>     Model alias (default: deepseek)
-                           Available: deepseek, deepseek-reasoner, sonnet, haiku, gpt4o, gpt4o-mini
+                           Available: deepseek, deepseek-pro, deepseek-flash,
+                           deepseek-reasoner, sonnet, haiku, gpt4o, gpt4o-mini
   -l, --load <file>       Load CSV/JSON file into database (repeatable)
   -d, --db <path>         Database file path (default: :memory:)
   -s, --session <name>    Name this session for later resume
@@ -188,11 +189,142 @@ function loadEnvFiles(): void {
   }
 }
 
+// ─── Knowledge Extraction ───────────────────────────────────────────────────
+
+async function extractKnowledge(
+  sessionId: string,
+  messages: AgentMessage[],
+  store: KnowledgeStore
+): Promise<void> {
+  // Only extract if there were actual user-assistant exchanges
+  const userMsgs = messages.filter((m) => m.role === "user")
+  const assistantMsgs = messages.filter((m) => m.role === "assistant")
+  if (userMsgs.length === 0 || assistantMsgs.length === 0) return
+
+  // Build a summary of the conversation
+  const summary = messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => {
+      const text = typeof m.content === "string"
+        ? m.content
+        : (m.content as any[]).filter((p: any) => p.type === "text").map((p: any) => p.text).join(" ")
+      return `[${m.role}]: ${text.slice(0, 300)}`
+    })
+    .join("\n")
+
+  // Use the configured provider to extract knowledge
+  if (!getProvider("deepseek")) {
+    registerProvider("deepseek", OpenAICompatibleProvider.deepseek())
+  }
+
+  const provider = getProvider("deepseek")
+  if (!provider) return
+
+  try {
+    const result = await provider.chat({
+      model: resolveModel("deepseek-flash"),
+      messages: [
+        {
+          role: "system",
+          content: `CRITICAL: Output ONLY a JSON array, no other text, no markdown formatting, no explanations.
+
+From the conversation below, extract 1-3 key facts about the data that would be valuable for future sessions. Focus on:
+- Data schema (table names, column meanings, data types)
+- Business semantics (what values mean, domain knowledge)
+- Data quality observations (patterns, anomalies, edge cases)
+
+Format: [{"domain":"...","fact":"...","keywords":"keyword1,keyword2"}]
+
+Example response (this is the ONLY format you should output):
+[{"domain":"sales","fact":"The region column contains values: East, West, North, South","keywords":"region,sales,geography"}]
+
+DO NOT include any text before or after the JSON array.`,
+        },
+        { role: "user", content: summary },
+      ],
+      temperature: 0.3,
+      maxTokens: 500,
+    })
+
+    const text = result.content
+      .filter((p: any) => p.type === "text")
+      .map((p: any) => p.text)
+      .join("")
+      .trim()
+
+    // Try to parse JSON — handle multiple formats:
+    // 1. Pure JSON array: [{...}]
+    // 2. Single JSON object: {...}
+    // 3. Markdown-wrapped: ```json [...] ```
+    // 4. Text with embedded JSON
+    let entries: Array<{ domain: string; fact: string; keywords: string }> = []
+
+    // Strip markdown code fences
+    const cleanText = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim()
+
+    // Try array format
+    const arrayMatch = cleanText.match(/^\s*\[([\s\S]*)\]\s*$/)
+    if (arrayMatch) {
+      try {
+        entries = JSON.parse(arrayMatch[0])
+      } catch {}
+    }
+
+    // Fallback: try single object
+    if (entries.length === 0) {
+      const objMatch = cleanText.match(/^\s*\{[\s\S]*\}\s*$/)
+      if (objMatch) {
+        try {
+          const obj = JSON.parse(objMatch[0])
+          entries = [obj]
+        } catch {}
+      }
+    }
+
+    // Fallback: find any JSON array anywhere in text
+    if (entries.length === 0) {
+      const anyMatch = cleanText.match(/\[[\s\S]*\]/)
+      if (anyMatch) {
+        try { entries = JSON.parse(anyMatch[0]) } catch {}
+      }
+    }
+
+    if (entries.length === 0 && cleanText.length > 10) {
+      console.error("[knowledge] could not parse JSON from:", cleanText.slice(0, 150))
+    }
+
+    for (const entry of entries) {
+      if (entry.fact && entry.fact.length > 5) {
+        await store.add({
+          domain: entry.domain || "general",
+          fact: entry.fact,
+          keywords: entry.keywords || "",
+          sourceSession: sessionId,
+          createdAt: Date.now(),
+          confidence: 0.6,
+        })
+      }
+    }
+  } catch (e: any) {
+    // Knowledge extraction failure is non-blocking
+    console.error("[knowledge] extraction failed:", e?.message?.slice(0, 100) || e)
+  }
+}
+
 // ─── Main CLI ─────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   // Load .env / config files before anything else
   loadEnvFiles()
+
+  // ── Sandbox persistence ───────────────────────────────────────────────────
+  // Auto-pause E2B sandbox on exit for session recovery
+  process.on("exit", () => {
+    ExternalTools.pauseSandbox?.().catch(() => {})
+  })
+  process.on("SIGINT", () => {
+    ExternalTools.pauseSandbox?.().then(() => process.exit(0)).catch(() => process.exit(0))
+  })
 
   const args = process.argv.slice(2)
   const { config, prompt } = parseArgs(args)
@@ -237,6 +369,7 @@ async function main(): Promise<void> {
 
   // ── Session management ─────────────────────────────────────────────────────
   const sessionStore = new SessionStore()
+  const traceStore = new TraceStore()
 
   // --list-sessions
   if (config.listSessions) {
@@ -293,6 +426,9 @@ async function main(): Promise<void> {
     console.log(`   Resumed: ${meta?.title || sessionId.slice(0, 16)}`)
   }
 
+  // Tell tools which session we're in (for file isolation)
+  setSessionContext(sessionId!)
+
   // ── Data loading ──────────────────────────────────────────────────────────
   for (const file of config.loadFiles) {
     console.log(`   Loading: ${file}...`)
@@ -335,6 +471,20 @@ async function main(): Promise<void> {
   }
   if (config.loadFiles.length > 0) console.log()
 
+  // ── Knowledge retrieval ──────────────────────────────────────────────────
+  const knowledgeStore = new KnowledgeStore()
+  let knowledgeContext = ""
+  const userPrompt = prompt || "interactive session"
+  try {
+    const relevant = await knowledgeStore.search(userPrompt, 3)
+    if (relevant.length > 0) {
+      knowledgeContext = `\n\n📚 **Prior Knowledge (from past sessions):**\n${relevant.map((k, i) => `${i + 1}. [${k.domain}] ${k.fact}`).join("\n")}\n\nUse this prior knowledge when relevant, but verify it against current data.`
+      if (config.verbose) {
+        console.log(`   📚 Loaded ${relevant.length} prior knowledge entries`)
+      }
+    }
+  } catch {}
+
   // ── Extensions, tools, agent ──────────────────────────────────────────────
 
 
@@ -364,10 +514,10 @@ async function main(): Promise<void> {
 
   // Combine tools
   const extensionTools = extensionRegistry.getTools()
-  const allTools = [...DuckDBTools.all, ...DataIOTools.all, ...extensionTools]
+  const allTools = [...DuckDBTools.all, ...DataIOTools.all, ...ExternalTools.all, ...SelfExtendTools.all, ...extensionTools]
 
   // Build system prompt
-  const systemPrompt = extensionRegistry.getSystemPrompt()
+  const systemPrompt = extensionRegistry.getSystemPrompt() + knowledgeContext
 
   // Create agent
   const agent = new Agent({
@@ -377,6 +527,24 @@ async function main(): Promise<void> {
     maxTurns: config.maxTurns,
     temperature: 0.7,
     maxTokens: 4096,
+    // DeepSeek model router: simple tasks → flash, complex → pro
+    modelRouter: (messages, turn) => {
+      // Turn 1 always use the configured model (pro) to understand intent
+      if (turn === 1) return config.model
+
+      // Check if the last user message looks simple
+      const userMessages = messages.filter((m) => m.role === "user")
+      const lastUser = userMessages[userMessages.length - 1]
+      if (lastUser) {
+        const text = typeof lastUser.content === "string" ? lastUser.content : ""
+        const isSimple =
+          text.length < 80 &&
+          !/(分析|趋势|归因|预测|建模|回归|异常|对比|降维|聚类|深度|explain|analyze|predict|compare|complex|deep)/i.test(text)
+        if (isSimple) return "deepseek-flash"
+      }
+
+      return config.model
+    },
     beforeToolCall: async (ctx) => {
       if (config.verbose) {
         console.error(`  🔧 Tool: ${ctx.toolName}(${JSON.stringify(ctx.args).slice(0, 80)})`)
@@ -391,9 +559,87 @@ async function main(): Promise<void> {
     },
   })
 
+  // Wire self-extending system
+  SelfExtendTools.setSelfExtendContext(extensionRegistry, (newTools) => {
+    const merged = [...DuckDBTools.all, ...DataIOTools.all, ...ExternalTools.all, ...SelfExtendTools.all, ...newTools]
+    agent.setTools(merged)
+  })
+
+  // ── Trace recording ───────────────────────────────────────────────────────
+  let traceStartMs = 0
+  let currentTurnModel = config.model
+  agent.subscribe((event: AgentEvent) => {
+    const trace: TraceRecord = {
+      traceId: `tr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      sessionId: sessionId!,
+      turn: 0,
+      eventType: "user_msg",
+      timestamp: Date.now(),
+    }
+
+    switch (event.type) {
+      case "agent_start":
+        trace.eventType = "session_start"
+        traceStore.record(trace).catch(() => {})
+        break
+
+      case "turn_start":
+        trace.turn = event.turn
+        trace.eventType = "llm_call"
+        trace.model = currentTurnModel
+        traceStartMs = Date.now()
+        traceStore.record(trace).catch(() => {})
+        break
+
+      case "tool_call_start":
+        trace.turn = event.toolCallId ? 0 : 0 // filled by prev turn_start
+        trace.eventType = "tool_call"
+        trace.toolName = event.toolName
+        trace.toolArgs = JSON.stringify(event.args).slice(0, 500)
+        traceStore.record(trace).catch(() => {})
+        break
+
+      case "tool_call_end":
+        trace.eventType = "tool_result"
+        trace.toolName = event.result.toolName
+        trace.toolIsError = event.result.isError
+        trace.toolResultSummary = (event.result.isError ? event.result.errorMessage : event.result.result.content)?.slice(0, 500)
+        trace.errorMessage = event.result.isError ? event.result.errorMessage : undefined
+        traceStore.record(trace).catch(() => {})
+        break
+
+      case "turn_end":
+        if (traceStartMs > 0) {
+          trace.eventType = "llm_call"
+          trace.latencyMs = Date.now() - traceStartMs
+          // Update the llm_call record with latency
+          traceStartMs = 0
+        }
+        break
+
+      case "message_end":
+        trace.eventType = "agent_response"
+        traceStore.record(trace).catch(() => {})
+        break
+
+      case "error":
+        trace.eventType = "error"
+        trace.errorMessage = event.message
+        traceStore.record(trace).catch(() => {})
+        break
+
+      case "agent_end":
+        trace.eventType = "session_end"
+        trace.metadata = { status: event.state.status, error: event.state.error }
+        traceStore.record(trace).catch(() => {})
+        break
+    }
+  })
+
   // Subscribe to events for nice output
   let currentText = ""
-  let lastEventWasTool = false
+  let inReasoning = false
+  let reasoningCharCount = 0
   agent.subscribe((event: AgentEvent) => {
     switch (event.type) {
       case "message_start":
@@ -401,29 +647,53 @@ async function main(): Promise<void> {
         break
 
       case "message_update":
-        // Text after tool output: insert blank line for visual separation
-        if (currentText === "" && lastEventWasTool) {
-          process.stdout.write("\n")
-          lastEventWasTool = false
+        // End reasoning block ONCE before showing final answer
+        if (inReasoning) {
+          process.stdout.write(`\x1b[0m\x1b[2m  ── thought for ${reasoningCharCount} chars ──\x1b[0m\n`)
+          inReasoning = false
+          reasoningCharCount = 0
         }
         process.stdout.write(event.delta)
         currentText += event.delta
         break
 
+      case "reasoning_update":
+        // Show reasoning in dim grey, stream in real-time
+        // Only start reasoning block if no text output has begun yet
+        if (!inReasoning && currentText === "") {
+          process.stdout.write("\x1b[2m")
+          inReasoning = true
+        }
+        if (inReasoning) {
+          process.stdout.write(event.delta)
+          reasoningCharCount += event.delta.length
+        }
+        break
+
       case "tool_call_start":
+        // End reasoning before tool call
+        if (inReasoning) {
+          process.stdout.write(`\x1b[0m\x1b[2m  ── thought for ${reasoningCharCount} chars ──\x1b[0m\n`)
+          inReasoning = false
+          reasoningCharCount = 0
+        }
         if (!config.verbose) {
-          process.stdout.write(`\n  🔍 ${event.toolName}...`)
+          process.stdout.write(` → 🔍 ${event.toolName}`)
         }
         break
 
       case "tool_call_end":
-        lastEventWasTool = true
+        // End reasoning if still active
+        if (inReasoning) {
+          process.stdout.write(`\x1b[0m\x1b[2m  ── thought for ${reasoningCharCount} chars ──\x1b[0m\n`)
+          inReasoning = false
+          reasoningCharCount = 0
+        }
         if (!config.verbose) {
           if (event.result.isError) {
-            process.stdout.write(` ❌ ${event.result.errorMessage?.slice(0, 60)}`)
+            process.stdout.write(` ❌`)
           } else {
-            const preview = event.result.result.content.slice(0, 100).replace(/\n/g, " ")
-            process.stdout.write(` ✓ (${preview}...)`)
+            process.stdout.write(` ✓`)
           }
         }
         process.stdout.write("\n")
@@ -438,11 +708,18 @@ async function main(): Promise<void> {
         break
 
       case "agent_end":
+        if (inReasoning) {
+          process.stdout.write(`\x1b[0m\x1b[2m  ── thought for ${reasoningCharCount} chars ──\x1b[0m\n`)
+          inReasoning = false
+          reasoningCharCount = 0
+        }
         if (event.state.status === "error") {
           process.stdout.write(`\n  ❌ Agent terminated with error: ${event.state.error}\n`)
         }
         // Auto-save session messages
         sessionStore.saveMessages(sessionId!, event.state.messages).catch(() => {})
+        // Extract knowledge in background (non-blocking)
+        extractKnowledge(sessionId!, event.state.messages, knowledgeStore).catch(() => {})
         break
     }
   })
@@ -506,12 +783,14 @@ Guidelines:
 5. Be concise but thorough — quality over quantity
 6. If you're unsure about something, verify with a query before stating it as fact
 7. Use get_sample to understand actual data values before analysis
+8. IMPORTANT: Write responses in natural flowing paragraphs. Do NOT insert line breaks between every word — the terminal handles text wrapping automatically.
 
 You are NOT a traditional BI tool. You are an intelligent agent that can:
 - Discover data autonomously
 - Form hypotheses and test them with queries
 - Combine multiple queries to build a complete picture
-- Explain findings in plain language`
+- Explain findings in plain language
+- Create new tools (extensions) to expand your capabilities when needed. Use create_extension to build reusable tools for recurring analysis patterns, data transformations, or specialized calculations. Created extensions persist across sessions.`
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
 

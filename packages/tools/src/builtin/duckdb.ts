@@ -209,12 +209,33 @@ const queryTool: AgentTool = {
     const displayRows = rows.slice(0, limit)
     let output = `Query returned ${rows.length} row(s).`
     if (rows.length > limit) output += ` Showing first ${limit}.`
-    output += `\n\nColumns: ${columns.join(" | ")}`
-    output += `\n${"-".repeat(60)}`
+
+    // ASCII table renderer
+    const colWidths = columns.map((c, i) => {
+      let w = c.length
+      for (const r of displayRows) w = Math.max(w, String(r[c] ?? "NULL").length)
+      return Math.min(w, 25)
+    })
+    const tblPad = (s: string, w: number) => {
+      if (s.length > w) return s.slice(0, w - 1) + "…"
+      return s + " ".repeat(w - s.length)
+    }
+    const sep = "─"
+    output += `\n┌${colWidths.map((w) => sep.repeat(w + 2)).join("┬")}┐`
+    output += `\n│ ${columns.map((c, i) => tblPad(c, colWidths[i])).join(" │ ")} │`
+    output += `\n├${colWidths.map((w) => sep.repeat(w + 2)).join("┼")}┤`
 
     for (const row of displayRows) {
-      output += `\n${columns.map((c) => formatValue(row[c])).join(" | ")}`
+      const vals = columns.map((c, i) => {
+        const v = row[c]
+        if (v === null) return "NULL"
+        if (typeof v === "bigint") return v.toString()
+        if (typeof v === "number") return Number.isInteger(v) ? v.toString() : Number(v).toFixed(2)
+        return String(v)
+      })
+      output += `\n│ ${vals.map((v, i) => tblPad(v, colWidths[i])).join(" │ ")} │`
     }
+    output += `\n└${colWidths.map((w) => sep.repeat(w + 2)).join("┴")}┘`
 
     queryCache.set(key, { result: output, timestamp: Date.now() })
     return {

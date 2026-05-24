@@ -36,6 +36,8 @@ export interface AgentConfig {
   maxTokens?: number
   /** Called before each turn, can modify messages */
   transformContext?: (messages: AgentMessage[]) => AgentMessage[]
+  /** Called before each LLM call to select model dynamically */
+  modelRouter?: (messages: AgentMessage[], turn: number) => string | ModelConfig
   /** Called before tool execution */
   beforeToolCall?: (ctx: ToolCallContext) => void | Promise<void>
   /** Called after tool execution */
@@ -105,6 +107,7 @@ export type AgentEvent =
   | { type: "turn_end"; turn: number; toolResults: ToolCallResult[] }
   | { type: "message_start"; message: AgentMessage }
   | { type: "message_update"; delta: string }
+  | { type: "reasoning_update"; delta: string }
   | { type: "message_end"; message: AgentMessage }
   | { type: "tool_call_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: "tool_call_progress"; toolCallId: string; content: string }
@@ -243,14 +246,18 @@ export class Agent {
       ...this.toLlmMessages(llmMessages),
     ]
 
-    // Resolve model config
+    // Resolve model config — apply router if configured
+    let modelSource = this.config.model
+    if (this.config.modelRouter) {
+      modelSource = this.config.modelRouter(llmMessages, turn)
+    }
     const modelConfig =
-      typeof this.config.model === "string"
-        ? resolveModel(this.config.model, {
+      typeof modelSource === "string"
+        ? resolveModel(modelSource, {
             temperature: this.config.temperature,
             maxTokens: this.config.maxTokens,
           })
-        : this.config.model
+        : modelSource
 
     // Build tool defs for LLM
     const toolDefs: ToolDef[] = this.state.tools.map((t) => ({
@@ -266,6 +273,7 @@ export class Agent {
       content: [],
       timestamp: Date.now(),
     }
+    let reasoningContent = ""
 
     this.emit({ type: "message_start", message: { ...assistantMsg } })
 
@@ -281,6 +289,10 @@ export class Agent {
             assistantContent.push({ type: "text", text: event.text })
             assistantMsg = { ...assistantMsg, content: [...assistantContent] }
             this.emit({ type: "message_update", delta: event.text })
+            break
+
+          case "reasoning_delta":
+            this.emit({ type: "reasoning_update", delta: event.text })
             break
 
           case "tool_call_start":
@@ -324,6 +336,9 @@ export class Agent {
             return "error"
 
           case "finish":
+            if (event.reasoningContent) {
+              reasoningContent = event.reasoningContent
+            }
             break
         }
       }
@@ -334,7 +349,7 @@ export class Agent {
     }
 
     // Finalize assistant message
-    assistantMsg = { ...assistantMsg, content: assistantContent }
+    assistantMsg = { ...assistantMsg, content: assistantContent, meta: reasoningContent ? { reasoningContent } : undefined }
     this.state = {
       ...this.state,
       messages: [...this.state.messages, assistantMsg],
@@ -578,6 +593,7 @@ export class Agent {
         return {
           role: m.role as "user" | "assistant",
           content: m.content,
+          reasoningContent: m.meta?.reasoningContent as string | undefined,
         }
       }) as Message[]
   }
@@ -587,4 +603,8 @@ export class Agent {
 
 export { SessionStore } from "./session-store.js"
 export type { SessionMeta } from "./session-store.js"
+export { TraceStore } from "./trace-store.js"
+export type { TraceRecord } from "./trace-store.js"
+export { KnowledgeStore } from "./knowledge-store.js"
+export type { KnowledgeEntry } from "./knowledge-store.js"
 export type { Message, MessagePart, ToolDef, ModelConfig }

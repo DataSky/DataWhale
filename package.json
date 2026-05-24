@@ -20,6 +20,7 @@
     "clean": "rm -rf packages/*/dist"
   },
   "dependencies": {
+    "@e2b/code-interpreter": "^2.5.0",
     "sql.js": "^1.14.1",
     "zod": "^4.4.3"
   },

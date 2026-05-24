@@ -134,6 +134,7 @@ export class OpenAICompatibleProvider implements Provider {
     let finishReason = "stop"
     let inputTokens = 0
     let outputTokens = 0
+    let reasoningContent = ""
 
     try {
       while (true) {
@@ -160,6 +161,12 @@ export class OpenAICompatibleProvider implements Provider {
 
             if (delta?.content) {
               yield { type: "text_delta", text: delta.content }
+            }
+
+            // Capture DeepSeek V4 reasoning_content (must be passed back)
+            if (delta?.reasoning_content) {
+              reasoningContent += delta.reasoning_content
+              yield { type: "reasoning_delta", text: delta.reasoning_content }
             }
 
             if (delta?.tool_calls) {
@@ -209,6 +216,7 @@ export class OpenAICompatibleProvider implements Provider {
       type: "finish",
       finishReason,
       usage: inputTokens > 0 ? { inputTokens, outputTokens } : undefined,
+      reasoningContent: reasoningContent || undefined,
     }
   }
 
@@ -256,6 +264,7 @@ export class OpenAICompatibleProvider implements Provider {
     content: unknown
     tool_calls?: unknown
     tool_call_id?: string
+    reasoning_content?: string
   } {
     // Handle tool result messages
     if (msg.role === "tool") {
@@ -312,10 +321,15 @@ export class OpenAICompatibleProvider implements Provider {
         role: "assistant",
         content: textParts.length > 0 ? textParts.join("\n") : null,
         tool_calls: toolCalls,
+        ...(msg.reasoningContent ? { reasoning_content: msg.reasoningContent } : {}),
       }
     }
 
-    return { role: msg.role, content: textParts.join("\n") }
+    return {
+      role: msg.role,
+      content: textParts.join("\n"),
+      ...(msg.role === "assistant" && msg.reasoningContent ? { reasoning_content: msg.reasoningContent } : {}),
+    }
   }
 
   private parseResponse(data: Record<string, unknown>): ChatResult {
