@@ -69,9 +69,34 @@ export default function Home() {
     [sessions, searchQuery]
   )
 
-  undefinedconst selectSession = useCallback(async (id: string) => {
+  const selectSession = useCallback(async (id: string) => {
     setActiveId(id)
     try {
+      // Try Query API first (new Span-based model)
+      const queries = await fetchJSON(`/api/queries?sessionId=${id}`)
+      if (queries && queries.length > 0) {
+        var msgs: Msg[] = []
+        for (var qi = 0; qi < queries.length; qi++) {
+          var q = queries[qi]
+          // User message
+          msgs.push({ id: "u" + qi, role: "user", content: q.userContent || "", ts: q.createdAt || Date.now() })
+          // Build assistant message from spans
+          var thinking = ""
+          var text = ""
+          var tools: any[] = []
+          for (var si = 0; si < (q.spans || []).length; si++) {
+            var span = q.spans[si]
+            if (span.type === "thinking") { thinking += (thinking ? "\n" : "") + span.content }
+            else if (span.type === "tool_call") { tools.push({ id: span.id || "", name: span.name || "", status: "done", preview: (span.result || span.arguments || "").slice(0, 80), detail: span.result || span.arguments || "" }) }
+            else if (span.type === "text") { text += (text ? "\n" : "") + span.content }
+          }
+          msgs.push({ id: "a" + qi, role: "assistant", content: text, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: q.createdAt || Date.now() })
+        }
+        setMessages(msgs)
+        return
+      }
+
+      // Fallback: old messages API
       const data = await fetchJSON(`/api/sessions/${id}`)
       if (data.messages) {
         setMessages(data.messages.filter(function(m: any) { return m.role !== "tool_result" }).map(function(m: any, i: number) {
