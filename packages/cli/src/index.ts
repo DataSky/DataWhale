@@ -347,7 +347,7 @@ async function main(): Promise<void> {
     process.env.PORT = String(config.servePort)
     console.log(`🦈 Starting DataWhale Web Server...`)
     const serverModule = await import("../../app-server/src/index.js")
-    Bun.serve({ port: config.servePort, fetch: serverModule.default.fetch })
+    Bun.serve({ port: config.servePort, fetch: serverModule.default.fetch, idleTimeout: 300 })
     console.log(`   Web UI → http://localhost:${config.servePort}`)
     return
   }
