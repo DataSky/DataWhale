@@ -181,7 +181,15 @@ export default function Home() {
               }
               else if (ev.type === "tool_call_start") {
                 tools = [...tools, { id: ev.toolCallId, name: ev.toolName, status: "running" }]
-                pushItem({ id: ev.toolCallId, type: "tool", content: "", toolName: ev.toolName, toolStatus: "running" })
+                // Deduplicate: update existing tool item instead of creating duplicate
+                var existingIdx = -1
+                for (var j = items.length - 1; j >= 0; j--) { if (items[j].type === "tool" && items[j].id === ev.toolCallId) { existingIdx = j; break } }
+                if (existingIdx >= 0) {
+                  items = [...items.slice(0, existingIdx), { ...items[existingIdx], toolStatus: "running" }, ...items.slice(existingIdx + 1)]
+                  setStreamItems(items)
+                } else {
+                  pushItem({ id: ev.toolCallId, type: "tool", content: "", toolName: ev.toolName, toolStatus: "running" })
+                }
               }
               else if (ev.type === "tool_call_end") {
                 tools = tools.map(function(t) { return t.id === ev.toolCallId ? { ...t, status: ev.isError ? "error" : "done", preview: ev.content } : t })
@@ -332,13 +340,22 @@ export default function Home() {
                       {/* Tool calls */}
                       {msg.tools && msg.tools.length > 0 ? (
                         <div className="mb-3 space-y-1">
-                          {msg.tools.map(function(tc) { return (
-                            <div key={tc.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
-                              <span className={tc.status === "done" ? "text-success" : tc.status === "error" ? "text-error" : "text-warning"}>{tc.status === "running" ? "⏳" : tc.status === "done" ? "✓" : "✗"}</span>
-                              <span className="text-text-secondary font-medium">{tc.name}</span>
-                              {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span> : null}
-                            </div>
-                          )})}
+                          {msg.tools.map(function(tc) {
+                            var hasDetail = tc.preview && tc.preview.length > 20
+                            return (
+                              <details key={tc.id} className="text-xs">
+                                <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
+                                  <span className={tc.status === "done" ? "text-success" : tc.status === "error" ? "text-error" : "text-warning"}>✓</span>
+                                  <span className="text-text-secondary font-medium">{tc.name}</span>
+                                  {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span> : null}
+                                  {hasDetail ? <span className="text-text-muted ml-auto text-[10px]">▸</span> : null}
+                                </summary>
+                                {hasDetail && (
+                                  <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed">{tc.preview}</div>
+                                )}
+                              </details>
+                            )
+                          })}
                         </div>
                       ) : null}
                       {/* Content */}
@@ -377,14 +394,21 @@ export default function Home() {
                   )
                 }
                 if (item.type === "tool") {
+                  var hasDetail = item.content && item.content.length > 20
                   return (
-                    <div key={item.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
-                      <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning"}>
-                        {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
-                      </span>
-                      <span className="text-text-secondary font-medium">{item.toolName}</span>
-                      {item.content ? <span className="text-text-muted truncate flex-1">{item.content.slice(0, 80)}</span> : null}
-                    </div>
+                    <details key={item.id} className="text-xs">
+                      <summary className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors">
+                        <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning"}>
+                          {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
+                        </span>
+                        <span className="text-text-secondary font-medium">{item.toolName}</span>
+                        {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate flex-1">{item.content.slice(0, 80)}</span> : null}
+                        {hasDetail && item.toolStatus === "done" ? <span className="text-text-muted ml-auto text-[10px]">▸</span> : null}
+                      </summary>
+                      {hasDetail && (
+                        <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed">{item.content}</div>
+                      )}
+                    </details>
                   )
                 }
                 return <MarkdownView key={item.id} content={item.content} />
