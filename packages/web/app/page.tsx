@@ -69,6 +69,22 @@ export default function Home() {
     [sessions, searchQuery]
   )
 
+  const turns = useMemo(function() {
+    var result: any[] = []
+    var current: any = null
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i]
+      if (m.role === "user") {
+        if (current) result.push(current)
+        current = { user: m, assistants: [] }
+      } else if (current) {
+        current.assistants.push(m)
+      }
+    }
+    if (current) result.push(current)
+    return result
+  }, [messages])
+
   const selectSession = useCallback(async (id: string) => {
     setActiveId(id)
     try {
