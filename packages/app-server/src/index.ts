@@ -222,6 +222,30 @@ app.get("/api/files/:sessionId/:filename", async (c) => {
   return new Response(file)
 })
 
+app.post("/api/upload", async (c) => {
+  const formData = await c.req.formData()
+  const file = formData.get("file") as File | null
+  if (!file) return c.json({ error: "no file" }, 400)
+  const uploadDir = `${process.env.HOME || "~"}/.datawhale/uploads`
+  const fs = await import("node:fs")
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+  const filePath = `${uploadDir}/${file.name}`
+  await Bun.write(filePath, file)
+  return c.json({ path: filePath, name: file.name, size: file.size })
+})
+
+app.get("/api/sessions/:id/export", async (c) => {
+  const id = c.req.param("id")
+  const session = await sessionStore.getSession(id)
+  if (!session) return c.json({ error: "not found" }, 404)
+  const messages = await sessionStore.loadMessages(id)
+  const md = messages.map(m => {
+    const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+    return `**${m.role}** (${new Date(m.timestamp).toLocaleString()}):\n\n${text}\n`
+  }).join("\n---\n\n")
+  return c.text(`# ${session.title}\n\n${md}`, 200, { "Content-Type": "text/markdown" })
+})
+
 app.get("/api/knowledge/search", async (c) => {
   const q = c.req.query("q") || ""
   const results = await knowledgeStore.search(q, 5)
