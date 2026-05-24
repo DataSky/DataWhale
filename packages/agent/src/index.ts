@@ -115,6 +115,8 @@ export type AgentEvent =
   | { type: "tool_call_progress"; toolCallId: string; content: string }
   | { type: "tool_call_end"; toolCallId: string; result: ToolCallResult }
   | { type: "error"; message: string; recoverable: boolean }
+  | { type: "span_delta"; span: Span }
+  | { type: "query_end"; query: Query }
 
 // ─── Tool Content Compressor ────────────────────────────────────────────────
 
@@ -159,6 +161,8 @@ export class Agent {
   private config: AgentConfig
   private listeners: Set<EventListener> = new Set()
   private abortController: AbortController | null = null
+  private _currentSpans: Span[] = []
+  private _currentUserContent = ""
 
   constructor(config: AgentConfig) {
     this.config = {

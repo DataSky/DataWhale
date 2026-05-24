@@ -30,6 +30,7 @@ const sessionStore = new SessionStore()
 const traceStore = new TraceStore()
 const knowledgeStore = new KnowledgeStore()
 const skillStore = new SkillStore()
+const queryStore = new QueryStore()
 
 // Register DeepSeek
 if (process.env.DEEPSEEK_API_KEY) {
@@ -245,6 +246,13 @@ app.get("/api/sessions/:id/export", async (c) => {
     return `**${m.role}** (${new Date(m.timestamp).toLocaleString()}):\n\n${text}\n`
   }).join("\n---\n\n")
   return c.text(`# ${session.title}\n\n${md}`, 200, { "Content-Type": "text/markdown" })
+})
+
+app.get("/api/queries", async (c) => {
+  const sid = c.req.query("sessionId")
+  if (!sid) return c.json({ error: "sessionId required" }, 400)
+  const queries = await queryStore.loadQueries(sid)
+  return c.json(queries)
 })
 
 app.get("/api/knowledge/search", async (c) => {
