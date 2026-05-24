@@ -17,6 +17,15 @@ async function fetchJSON(url: string, init?: RequestInit) {
 
 interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number }
 
+// Ordered stream items for correct interleaving of thinking/tools/text
+interface StreamItem {
+  id: string
+  type: "thinking" | "tool" | "text"
+  content: string
+  toolName?: string
+  toolStatus?: string
+}
+
 export default function Home() {
   const [sessions, setSessions] = useState<any[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -130,13 +139,22 @@ export default function Home() {
     setInput(""); setEditingMsgId(null)
     const userMsg: Msg = { id: "m" + Date.now(), role: "user", content: text, ts: Date.now() }
     const newMsgs = [...messages, userMsg]; setMessages(newMsgs)
-    setStreaming(true); setStreamText(""); setStreamThinking(""); setStreamTools([])
+    setStreaming(true); setStreamItems([])
 
     try {
       const res = await fetch(API + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, sessionId: activeIdRef.current || undefined, model: selectedModel, files: uploadedFiles.map(function(f) { return f.path }) }) })
       if (!res.ok || !res.body) throw new Error("Connection failed")
       const reader = res.body.getReader(); const decoder = new TextDecoder()
       var buf = "", thinking = "", content = ""; var tools: any[] = []; var newSid = activeIdRef.current
+      var items: StreamItem[] = []
+      function pushItem(item: StreamItem) { items = [...items, item]; setStreamItems(items) }
+      function updateLastItem(updater: (it: StreamItem) => StreamItem) {
+        if (items.length === 0) return
+        var last = items[items.length - 1]
+        items = [...items.slice(0, -1), updater(last)]
+        setStreamItems(items)
+      }
+
       while (true) {
         const nxt = await reader.read(); if (nxt.done) break
         buf += decoder.decode(nxt.value, { stream: true })
@@ -147,17 +165,42 @@ export default function Home() {
             var line = lines[li]; if (!line.startsWith("data: ")) continue
             try {
               var ev = JSON.parse(line.slice(6))
-              if (ev.type === "message_update") { content += ev.delta; setStreamText(content) }
-              else if (ev.type === "reasoning_update") { thinking += ev.delta; setStreamThinking(thinking) }
-              else if (ev.type === "tool_call_start") { tools = [...tools, { id: ev.toolCallId, name: ev.toolName, status: "running" }]; setStreamTools([...tools]) }
-              else if (ev.type === "tool_call_end") { tools = tools.map(function(t) { return t.id === ev.toolCallId ? { ...t, status: ev.isError ? "error" : "done", preview: ev.content } : t }); setStreamTools([...tools]) }
+              if (ev.type === "message_update") {
+                content += ev.delta
+                if (items.length > 0 && items[items.length - 1].type === "text") {
+                  updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
+                } else {
+                  pushItem({ id: "t" + Date.now(), type: "text", content: ev.delta })
+                }
+              }
+              else if (ev.type === "reasoning_update") {
+                thinking += ev.delta
+                if (items.length > 0 && items[items.length - 1].type === "thinking") {
+                  updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
+                } else {
+                  pushItem({ id: "r" + Date.now(), type: "thinking", content: ev.delta })
+                }
+              }
+              else if (ev.type === "tool_call_start") {
+                tools = [...tools, { id: ev.toolCallId, name: ev.toolName, status: "running" }]
+                pushItem({ id: ev.toolCallId, type: "tool", content: "", toolName: ev.toolName, toolStatus: "running" })
+              }
+              else if (ev.type === "tool_call_end") {
+                tools = tools.map(function(t) { return t.id === ev.toolCallId ? { ...t, status: ev.isError ? "error" : "done", preview: ev.content } : t })
+                var idx = -1
+                for (var j = items.length - 1; j >= 0; j--) { if (items[j].id === ev.toolCallId) { idx = j; break } }
+                if (idx >= 0) {
+                  items = [...items.slice(0, idx), { ...items[idx], toolStatus: ev.isError ? "error" : "done", content: ev.content || "" }, ...items.slice(idx + 1)]
+                  setStreamItems(items)
+                }
+              }
               else if (ev.type === "agent_end") { if (ev.sessionId) newSid = ev.sessionId }
             } catch {}
           }
         }
       }
       setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now() }])
-      setStreamText(""); setStreamThinking(""); setStreamTools([]); setStreaming(false)
+      setStreamItems([]); setStreaming(false)
       if (newSid) setActiveId(newSid); loadSessions()
     } catch (err: any) { setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now() }]); setStreaming(false) }
   }, [input, streaming, messages, selectedModel, uploadedFiles, loadSessions])
@@ -322,23 +365,34 @@ export default function Home() {
 
           {/* Streaming */}
           {streaming ? (
-            <div className="msg-enter flex justify-start"><div className="max-w-[85%] min-w-0 space-y-2">
-              {streamThinking ? (
-                <details open><summary className="text-xs text-text-muted cursor-pointer select-none flex items-center gap-1.5"><span className="text-[10px]">▾</span><span>Thinking…</span></summary>
-                  <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{streamThinking}</div>
-                </details>
-              ) : null}
-              {streamTools.map(function(tc) { return (
-                <div key={tc.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
-                  <span className={tc.status === "done" ? "text-success" : "text-warning"}>{tc.status === "running" ? "⏳" : "✓"}</span>
-                  <span className="text-text-secondary font-medium">{tc.name}</span>
-                  {tc.preview ? <span className="text-text-muted truncate flex-1">{tc.preview.slice(0, 80)}</span> : null}
-                </div>
-              )})}
-              {streamText ? <div><MarkdownView content={streamText} /><span className="typing-cursor" /></div> : null}
-              {!streamText && !streamThinking && streamTools.length === 0 ? (
+            <div className="msg-enter flex justify-start"><div className="max-w-[85%] min-w-0 space-y-1.5">
+              {streamItems.length === 0 ? (
                 <div className="flex gap-1.5 py-2"><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} /></div>
               ) : null}
+              {streamItems.map(function(item) {
+                if (item.type === "thinking") {
+                  return (
+                    <details key={item.id} open>
+                      <summary className="text-xs text-text-muted cursor-pointer select-none flex items-center gap-1.5"><span className="text-[10px]">▾</span><span>Thinking…</span></summary>
+                      <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{item.content}</div>
+                    </details>
+                  )
+                }
+                if (item.type === "tool") {
+                  return (
+                    <div key={item.id} className="flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50">
+                      <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning"}>
+                        {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
+                      </span>
+                      <span className="text-text-secondary font-medium">{item.toolName}</span>
+                      {item.content ? <span className="text-text-muted truncate flex-1">{item.content.slice(0, 80)}</span> : null}
+                    </div>
+                  )
+                }
+                return <MarkdownView key={item.id} content={item.content} />
+              })}
+              {/* typing cursor on the last text item */}
+              {streamItems.length > 0 && streamItems[streamItems.length - 1].type === "text" ? <span className="typing-cursor" /> : null}
             </div></div>
           ) : null}
         </div>
