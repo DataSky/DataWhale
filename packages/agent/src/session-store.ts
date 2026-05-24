@@ -66,6 +66,7 @@ export class SessionStore {
         session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        thinking TEXT,
         timestamp INTEGER NOT NULL,
         meta TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions(id)
@@ -155,14 +156,15 @@ export class SessionStore {
 
     // Only save new messages (avoid duplicates by content hash)
     const insertStmt = db.prepare(
-      "INSERT OR IGNORE INTO messages (session_id, role, content, timestamp, meta) VALUES (?, ?, ?, ?, ?)"
+      "INSERT OR IGNORE INTO messages (session_id, role, content, thinking, timestamp, meta) VALUES (?, ?, ?, ?, ?, ?)"
     )
 
     const now = Date.now()
     for (const msg of messages) {
       const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+      const thinking = msg.thinking || null
       const meta = msg.meta ? JSON.stringify(msg.meta) : null
-      insertStmt.run([sessionId, msg.role, content, msg.timestamp || now, meta])
+      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp || now, meta])
     }
     insertStmt.free()
 
@@ -178,7 +180,7 @@ export class SessionStore {
   async loadMessages(sessionId: string): Promise<AgentMessage[]> {
     const db = await this.init()
     const stmt = db.prepare(
-      "SELECT role, content, timestamp, meta FROM messages WHERE session_id = ? ORDER BY id ASC"
+      "SELECT role, content, thinking, timestamp, meta FROM messages WHERE session_id = ? ORDER BY id ASC"
     )
     stmt.bind([sessionId])
 
@@ -195,6 +197,7 @@ export class SessionStore {
       messages.push({
         role: row.role as AgentMessage["role"],
         content,
+        thinking: (row as any).thinking || undefined,
         timestamp: row.timestamp as number,
         meta: row.meta ? JSON.parse(row.meta as string) : undefined,
       })

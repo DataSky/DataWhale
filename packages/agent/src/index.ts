@@ -85,6 +85,8 @@ export interface AgentMessage {
   role: "system" | "user" | "assistant" | "tool_result"
   content: string | MessagePart[]
   timestamp: number
+  /** Reasoning/thinking content (DeepSeek V4 thinking mode) */
+  thinking?: string
   /** Optional metadata for tracking */
   meta?: Record<string, unknown>
 }
