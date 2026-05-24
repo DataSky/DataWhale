@@ -287,6 +287,7 @@ export default function Home() {
                             <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
                           </details>
                         )
+                      ) : null}
                       {/* Tool calls */}
                       {msg.tools && msg.tools.length > 0 ? (
                         <div className="mb-3 space-y-1">
