@@ -262,6 +262,30 @@ export default function Home() {
           }
           msgs.push({ id: "aq" + q.id, role: "assistant", content: text, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: q.createdAt || Date.now() })
         }
+        // Also load artifacts from messages API (artifacts are stored in message meta, not queries)
+        try {
+          const msgData = await fetchJSON(`/api/sessions/${id}`)
+          if (msgData.messages) {
+            // Collect artifacts from assistant messages in order
+            const artList: ArtifactData[][] = []
+            for (var mi = 0; mi < msgData.messages.length; mi++) {
+              var rm = msgData.messages[mi]
+              if (rm.role === "assistant" && rm.meta?.artifacts && Array.isArray(rm.meta.artifacts)) {
+                artList.push(rm.meta.artifacts.map(function(a: any) {
+                  return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", streaming: false }
+                }))
+              }
+            }
+            // Attach artifacts by order to assistant messages in msgs
+            var artIdx = 0
+            for (var mj = 0; mj < msgs.length && artIdx < artList.length; mj++) {
+              if (msgs[mj].role === "assistant") {
+                msgs[mj].artifacts = artList[artIdx]
+                artIdx++
+              }
+            }
+          }
+        } catch {}
         setMessages(msgs)
         return
       }
