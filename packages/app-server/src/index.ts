@@ -150,8 +150,7 @@ app.post("/api/chat", async (c) => {
             ? event.result.errorMessage
             : event.result.result.content || ""
 
-           // Schema Registry: auto-capture table schemas from describe_table
-          console.error("[DEBUG] tool_call_end:", event.result.toolName, "isError:", event.result.isError)
+           // Schema Registry: auto-capture table schemas
           if (!event.result.isError && event.result.toolName === "describe_table") {
             const content = event.result.result.content
             let tableMatch = content.match(/Table:\s*["\x60]?(\w+)["\x60]?/)
