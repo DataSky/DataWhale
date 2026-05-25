@@ -237,6 +237,12 @@ const queryTool: AgentTool = {
     }
     output += `\n└${colWidths.map((w) => sep.repeat(w + 2)).join("┴")}┘`
 
+    // Truncate long outputs to avoid context explosion
+    const maxLen = 6000
+    if (output.length > maxLen) {
+      output = output.slice(0, maxLen) + `\n... (truncated, ${output.length} chars total, ${rows.length} rows)`
+    }
+
     queryCache.set(key, { result: output, timestamp: Date.now() })
     return {
       content: output,
