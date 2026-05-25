@@ -303,11 +303,31 @@ export class SessionStore {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function collapseNewlines(text: string): string {
-  if (text.length <= 100) return text
-  const words = text.split("\n").filter(l => l.trim())
-  // If average line is a single word/character → collapse all newlines
-  if (words.length >= 5 && words.reduce((s, l) => s + l.length, 0) / words.length < 4) {
-    return words.join(" ").replace(/\s{2,}/g, " ")
+  // Heuristic: detect "one-word-per-line" pattern from DeepSeek V4
+  // When >50% of non-empty lines are single characters, merge them.
+  const lines = text.split("\n")
+  const nonEmpty = lines.filter(l => l.trim().length > 0)
+  if (nonEmpty.length >= 5) {
+    const singleChars = nonEmpty.filter(l => l.trim().length <= 2).length
+    if (singleChars > nonEmpty.length * 0.5) {
+      // Merge single-character lines, preserve paragraph breaks (double newlines)
+      const merged: string[] = []
+      let buf = ""
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.length === 0) {
+          if (buf) { merged.push(buf); buf = "" }
+          merged.push("")
+        } else if (trimmed.length <= 2) {
+          buf += trimmed
+        } else {
+          if (buf) { merged.push(buf); buf = "" }
+          merged.push(line)
+        }
+      }
+      if (buf) merged.push(buf)
+      return merged.join("\n").replace(/\n{4,}/g, "\n\n\n")
+    }
   }
   return text.replace(/\n{4,}/g, "\n\n\n")
 }

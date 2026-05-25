@@ -3,9 +3,37 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { marked } from "marked"
 
+// Normalize "one-word-per-line" syndrome from DeepSeek V4 Chinese output.
+// When >50% of lines are 1-2 chars, merge them back into continuous text.
+function normalizeNewlines(text: string): string {
+  const lines = text.split("\n")
+  const nonEmpty = lines.filter(l => l.trim().length > 0)
+  if (nonEmpty.length < 5) return text
+  const singleChars = nonEmpty.filter(l => l.trim().length <= 2).length
+  if (singleChars <= nonEmpty.length * 0.5) return text
+
+  const merged: string[] = []
+  let buf = ""
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) {
+      if (buf) { merged.push(buf); buf = "" }
+      merged.push("")
+    } else if (trimmed.length <= 2) {
+      buf += trimmed
+    } else {
+      if (buf) { merged.push(buf); buf = "" }
+      merged.push(line)
+    }
+  }
+  if (buf) merged.push(buf)
+  return merged.join("\n").replace(/\n{4,}/g, "\n\n\n")
+}
+
 function MarkdownView({ content }: { content: string }) {
+  const normalized = normalizeNewlines(content || "")
   let html = ""
-  try { html = marked.parse(content || "") as string } catch {}
+  try { html = marked.parse(normalized) as string } catch {}
   return <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
