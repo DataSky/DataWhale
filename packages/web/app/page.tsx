@@ -106,7 +106,7 @@ async function fetchJSON(url: string, init?: RequestInit) {
   return res.json()
 }
 
-interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number }
+interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number; artifacts?: ArtifactData[] }
 
 // Ordered stream items for correct interleaving of thinking/tools/text
 interface StreamItem {
@@ -381,14 +381,32 @@ export default function Home() {
           }
         }
       }
-      setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now() }])
+      // Preserve completed artifacts from stream items into the assistant message
+      var completedArtifacts: ArtifactData[] = []
+      for (var si = 0; si < items.length; si++) {
+        if (items[si].type === "artifact") {
+          completedArtifacts.push({
+            id: items[si].id, type: items[si].artifactType || "html",
+            title: items[si].artifactTitle, content: items[si].content,
+            streaming: false,
+          })
+        }
+      }
+      setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined }])
       setStreamItems([]); setStreaming(false); abortControllerRef.current = null
       if (newSid) setActiveId(newSid); loadSessions()
     } catch (err: any) {
+      // Preserve any partial artifacts on error too
+      var errArtifacts: ArtifactData[] = []
+      for (var si2 = 0; si2 < items.length; si2++) {
+        if (items[si2].type === "artifact") {
+          errArtifacts.push({ id: items[si2].id, type: items[si2].artifactType || "html", title: items[si2].artifactTitle, content: items[si2].content, streaming: false })
+        }
+      }
       if (err.name === "AbortError") {
-        setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now() }])
+        setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: errArtifacts.length > 0 ? errArtifacts : undefined }])
       } else {
-        setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now() }])
+        setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now(), artifacts: errArtifacts.length > 0 ? errArtifacts : undefined }])
       }
       setStreamItems([]); setStreaming(false); abortControllerRef.current = null
     }
@@ -582,6 +600,14 @@ export default function Home() {
                           ) : null}
                           {/* Content */}
                           {msg.content ? <MarkdownView content={msg.content} /> : null}
+                          {/* Artifacts attached to this message */}
+                          {msg.artifacts && msg.artifacts.length > 0 ? (
+                            <div className="mt-3 space-y-2">
+                              {msg.artifacts.map(function(a) {
+                                return <ArtifactCard key={a.id} artifact={a} onFullscreen={function() { setFullscreenArtifact(a) }} />
+                              })}
+                            </div>
+                          ) : null}
                           {/* Separator between ReAct steps */}
                           {!isLastInTurn ? <div className="border-t border-border my-3" /> : null}
                         </div>
