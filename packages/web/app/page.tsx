@@ -53,7 +53,7 @@ function HtmlView({ artifact }: { artifact: ArtifactData }) {
     return (
       <iframe
         src={artifact.fileUrl}
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-same-origin"
         className="w-full h-full border-0 rounded-lg"
         style={{ minHeight: 300 }}
         title="HTML Artifact"
