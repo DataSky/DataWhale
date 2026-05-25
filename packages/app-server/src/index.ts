@@ -105,7 +105,7 @@ app.post("/api/chat", async (c) => {
     try {
       const history = await sessionStore.loadMessages(sessionId)
       if (history && history.length > 0) {
-        agent.state.messages = history.slice()
+        agent.state.messages = history.slice(-20)  // last 20 messages max
       }
     } catch {}
   }
