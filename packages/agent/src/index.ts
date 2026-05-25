@@ -233,32 +233,12 @@ export class Agent {
       }
 
       this.emit({ type: "agent_end", state: this.state })
-      // Build and emit Query
-      const query = makeQuery({
-        sessionId: this.state.messages[0]?.meta?.sessionId as string || "",
-        userContent: this._currentUserContent,
-        spans: this._currentSpans,
-        model: typeof this.config.model === "string" ? this.config.model : this.config.model.model,
-      })
-      this.emit({ type: "query_end", query })
-      this._currentSpans = []
-      this._currentUserContent = ""
       return this.state
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.state = { ...this.state, status: "error", error: message }
       this.emit({ type: "error", message, recoverable: false })
       this.emit({ type: "agent_end", state: this.state })
-      // Build and emit Query
-      const query = makeQuery({
-        sessionId: this.state.messages[0]?.meta?.sessionId as string || "",
-        userContent: this._currentUserContent,
-        spans: this._currentSpans,
-        model: typeof this.config.model === "string" ? this.config.model : this.config.model.model,
-      })
-      this.emit({ type: "query_end", query })
-      this._currentSpans = []
-      this._currentUserContent = ""
       return this.state
     }
   }

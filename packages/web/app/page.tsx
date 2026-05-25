@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { marked } from "marked"
 
 function MarkdownView({ content }: { content: string }) {
-  const html = marked.parse(content || "") as string
+  let html = ""
+  try { html = marked.parse(content || "") as string } catch {}
   return <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
