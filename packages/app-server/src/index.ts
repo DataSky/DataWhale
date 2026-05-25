@@ -150,12 +150,19 @@ app.post("/api/chat", async (c) => {
             ? event.result.errorMessage
             : event.result.result.content || ""
 
-          // Schema Registry: auto-capture table schemas from describe_table
+           // Schema Registry: auto-capture table schemas from describe_table
+          console.error("[DEBUG] tool_call_end:", event.result.toolName, "isError:", event.result.isError)
           if (!event.result.isError && event.result.toolName === "describe_table") {
             const content = event.result.result.content
-            const tableMatch = content.match(/Table: (\w+)/)
+            let tableMatch = content.match(/Table:\s*["\x60]?(\w+)["\x60]?/)
             if (tableMatch) {
               const tableName = tableMatch[1]
+              // Just store table name, let KnowledgeStore handle dedup
+              knowledgeStore.add({
+                domain: `schema:${tableName}`, sourceSession: sessionId,
+                fact: `Schema captured for table ${tableName}: ${content.slice(0, 200).replace(/\n/g, " ")}`,
+                keywords: `${tableName},schema,columns`, createdAt: Date.now(), confidence: 0.85,
+              }).catch(() => {})
               const colMatches = content.match(/  - (\w+):/g)
               if (colMatches) {
                 const cols = colMatches.map((c: string) => c.replace(/  - /, "").replace(/:$/, ""))
