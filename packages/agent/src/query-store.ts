@@ -109,10 +109,9 @@ export class QueryStore {
     ])
     stmt.free()
 
-    // 2) Write old-format compatible: sessions + messages tables
-    this._ensureSession(db, query.sessionId, query.userContent.slice(0, 40), query.model)
-    this._writeMessages(db, query)
-
+    // 2) Compatible writes removed — sessionStore now owns messages persistence.
+    // Dual-write was causing COUNT skew in sessionStore's incremental save,
+    // leading to lost tool_result messages and tool_call_id mismatches.
     await saveDatabase(this.dbPath)
   }
 

@@ -147,11 +147,13 @@ export class SessionStore {
   async saveMessages(sessionId: string, messages: AgentMessage[]): Promise<void> {
     const db = await this.init()
 
-    // Incremental save: only persist messages beyond what's already stored.
-    // This prevents the duplicate-bloat bug where full-state saves on every
-    // turn would re-insert prior messages, exploding the DB row count.
-    const countResult = db.exec(`SELECT COUNT(*) as cnt FROM messages WHERE session_id = '${sessionId}'`)
-    const alreadySaved = (countResult[0]?.values[0]?.[0] as number) || 0
+    // Incremental save: use session.message_count (owned solely by us) to
+    // determine the slice point. This avoids COUNT skew from external writes.
+    const metaStmt = db.prepare("SELECT message_count FROM sessions WHERE id = ?")
+    metaStmt.bind([sessionId])
+    metaStmt.step()
+    const alreadySaved = (metaStmt.getAsObject().message_count as number) || 0
+    metaStmt.free()
     const newMessages = messages.slice(alreadySaved)
     if (newMessages.length === 0) return
 
@@ -220,10 +222,10 @@ export class SessionStore {
     }
     insertStmt.free()
 
-    // Update session metadata
-    const count = (db.exec(`SELECT COUNT(*) as cnt FROM messages WHERE session_id = '${sessionId}'`)[0]?.values[0]?.[0]) || messages.length
+    // Update session metadata — use our own counter, not table COUNT
+    const newCount = alreadySaved + newMessages.length
     db.run("UPDATE sessions SET updated_at = ?, message_count = ? WHERE id = ?", [
-      now, count, sessionId,
+      now, newCount, sessionId,
     ])
 
     await saveDatabase(this.dbPath)
