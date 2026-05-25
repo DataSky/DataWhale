@@ -427,6 +427,7 @@ export default function Home() {
                         <span>
                           <button onClick={function() { copyMessage(turn.assistants[turn.assistants.length - 1].content, turn.assistants[turn.assistants.length - 1].id) }} className="text-text-muted hover:text-text-secondary ml-2">{copiedId === turn.assistants[turn.assistants.length - 1].id ? '✓' : '📋'}</button>
                           {ti === turns.length - 1 ? <button onClick={regenerate} className="text-text-muted hover:text-text-secondary ml-1">🔄</button> : null}
+                          <button onClick={function() { copyMessage(activeId || "", "sid") }} className="text-text-muted hover:text-text-secondary ml-1" title="复制会话ID">{copiedId === "sid" ? "✓" : "🔗"}</button>
                         </span>
                       ) : null}
                     </span>
