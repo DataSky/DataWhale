@@ -902,6 +902,15 @@ ${dateStr} · ${timeStr} · ISO: ${isoStr} · 时区: Asia/Shanghai (UTC+8)
 <tool name="create_extension">创建自定义工具，持久化跨会话使用。</tool>
 </tools>
 
+<offload_rules>
+大数据量分析卸载策略 — 避免 LLM Context 爆炸:
+1. query 返回 > 100 行时: 只给摘要和统计结论，不要逐行输出
+2. 深入分析完整数据时: 不需要重新 query！检查沙箱中是否已有文件（list_workspace_files）
+3. 如果沙箱已有 CSV 文件，直接用 execute_python + pd.read_csv 读取分析
+4. 如果需要把数据传给 Python: 直接用 execute_python，不需要把数据写进 prompt
+5. 分析完成只返回结论和可视化图表，不返回原始数据
+</offload_rules>
+
 <visualization>
 当查询结果包含 1 个分类列 + 1 个数值列（类别数 ≤ 10），使用 execute_python + matplotlib 生成柱状图。代码模板：
 \`\`\`python

@@ -245,6 +245,14 @@ const executePythonTool: AgentTool = {
 
     const sandbox = await getSandbox()
 
+    // Clean up old sandbox files (> 30 min old) to prevent accumulation
+    try {
+      await sandbox.runCode(
+        "import os, time; now=time.time(); [os.remove(f'/tmp/{f}') for f in os.listdir('/tmp') if os.path.isfile(f'/tmp/{f}') and now - os.path.getmtime(f'/tmp/{f}') > 1800 and not f.startswith('systemd') and not f.startswith('.')]",
+        { timeoutMs: 5000 }
+      )
+    } catch {}
+
     // Install packages if needed
     const installPkgs = (params.install_packages as string) || ""
     if (installPkgs) {

@@ -163,6 +163,12 @@ app.post("/api/chat", async (c) => {
       stream.writeSSE({
         data: JSON.stringify({ type: "error", message: err.message }),
       })
+    } finally {
+      // Always flush agent_end — Hono streamSSE may close before Agent's emit
+      stream.writeSSE({
+        data: JSON.stringify({ type: "agent_end", status: agent.state.status, sessionId })
+      })
+      await new Promise(r => setTimeout(r, 50))
     }
 
     // extract knowledge in background
@@ -368,7 +374,13 @@ const SYSTEM_PROMPT = `CURRENT DATE: ${dateStr} | TIME: ${timeStr} CST (UTC+8) |
 
 用中文思考和回答。Think and respond in Chinese.
 
-你是 DataWhale，一个 AI 原生的中文数据分析 Agent。日期类问题直接使用上面 CURRENT DATE 的信息，不要搜索或编造。**输出规则：禁止逐字换行。用 markdown 让回复清晰。**`
+你是 DataWhale，一个 AI 原生的中文数据分析 Agent。日期类问题直接使用上面 CURRENT DATE 的信息，不要搜索或编造。**输出规则：禁止逐字换行。用 markdown 让回复清晰。**
+
+大数据分析策略:
+- query 返回 > 100 行时只给摘要，不逐行输出
+- 深入分析用 execute_python + pd.read_csv，不重新 query
+- 先 list_workspace_files 检查沙箱是否有数据
+- 结论+图表优先，不返回原始数据`
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
