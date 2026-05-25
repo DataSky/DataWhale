@@ -348,12 +348,30 @@ const executePythonTool: AgentTool = {
 
     if (savedFiles.length > 0) {
       const imageExts = /\.(png|jpe?g|gif|svg|webp)$/i
+      const htmlExt = /\.html?$/i
       const imageFiles = savedFiles.filter(f => imageExts.test(f))
-      const otherFiles = savedFiles.filter(f => !imageExts.test(f))
+      const htmlFiles = savedFiles.filter(f => htmlExt.test(f))
+      const otherFiles = savedFiles.filter(f => !imageExts.test(f) && !htmlExt.test(f))
       output += "\n"
       for (const f of imageFiles) {
         const name = f.split("/").pop()!
         output += `\n![${name}](/api/files/${_sessionId}/${name})`
+      }
+      // Emit artifact events for .html files so frontend renders them inline
+      const htmlArtifacts: Array<{ id: string; title: string; fileUrl: string }> = []
+      for (const f of htmlFiles) {
+        const name = f.split("/").pop()!
+        const fileUrl = `/api/files/${_sessionId}/${name}`
+        output += `\n📄 [${name}](${fileUrl}) (HTML artifact — rendered inline)`
+        const artId = `art_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        htmlArtifacts.push({ id: artId, title: name, fileUrl })
+        if (_emitArtifact) {
+          _emitArtifact({ type: "artifact_start", artifactId: artId, artifactType: "html", title: name, fileUrl })
+          _emitArtifact({ type: "artifact_end", artifactId: artId })
+        }
+      }
+      if (htmlArtifacts.length > 0) {
+        (details as any).htmlArtifacts = htmlArtifacts
       }
       if (otherFiles.length > 0) {
         output += `\n\n📄 ${otherFiles.length} data file(s) saved (use /api/files/ links to re-read):`

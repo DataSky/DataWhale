@@ -175,19 +175,30 @@ export class SessionStore {
     }
 
     // Collect artifact data from tool_result → forward to next assistant message
-    const pendingArtifacts: Array<{ id: string; type: string; title: string; html: string }> = []
+    interface PendingArtifact { id: string; type: string; title: string; html?: string; fileUrl?: string }
+    const pendingArtifacts: PendingArtifact[] = []
 
     for (const msg of newMessages) {
-      // Check if this tool_result carries artifact data (from generate_html etc.)
+      // Check if this tool_result carries artifact data (from generate_html or execute_python)
       if (msg.role === "tool_result" && msg.meta?.details) {
         const dt = msg.meta.details as Record<string, unknown>
+        // Inline HTML artifact (generate_html)
         if (dt.artifactHtml && dt.artifactId) {
           pendingArtifacts.push({
             id: dt.artifactId as string,
             type: (dt.artifactType as string) || "html",
             title: (dt.title as string) || "Artifact",
             html: dt.artifactHtml as string,
-          }) as any
+          })
+        }
+        // File-based HTML artifacts (execute_python → .html file export)
+        const htmlArts = dt.htmlArtifacts as Array<{ id: string; title: string; fileUrl: string }> | undefined
+        if (htmlArts && htmlArts.length > 0) {
+          for (const ha of htmlArts) {
+            pendingArtifacts.push({
+              id: ha.id, type: "html", title: ha.title, fileUrl: ha.fileUrl,
+            })
+          }
         }
       }
 
@@ -234,9 +245,12 @@ export class SessionStore {
 
       // Attach pending artifacts to this assistant message
       if (msg.role === "assistant" && pendingArtifacts.length > 0) {
-        mergedMeta.artifacts = pendingArtifacts.map(a => ({
-          id: a.id, type: a.type, title: a.title, html: a.html,
-        }))
+        mergedMeta.artifacts = pendingArtifacts.map(a => {
+          const entry: Record<string, unknown> = { id: a.id, type: a.type, title: a.title }
+          if (a.html) entry.html = a.html
+          if (a.fileUrl) entry.fileUrl = a.fileUrl
+          return entry
+        })
         pendingArtifacts.length = 0
       }
 

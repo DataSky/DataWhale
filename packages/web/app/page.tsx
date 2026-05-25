@@ -43,14 +43,26 @@ interface ArtifactData {
   id: string
   type: string
   title?: string
-  content: string
+  content: string       // inline HTML (from generate_html)
+  fileUrl?: string      // file path /api/files/... (from execute_python)
   streaming: boolean
 }
 
-function HtmlView({ html }: { html: string }) {
+function HtmlView({ artifact }: { artifact: ArtifactData }) {
+  if (artifact.fileUrl) {
+    return (
+      <iframe
+        src={artifact.fileUrl}
+        sandbox="allow-scripts"
+        className="w-full h-full border-0 rounded-lg"
+        style={{ minHeight: 300 }}
+        title="HTML Artifact"
+      />
+    )
+  }
   return (
     <iframe
-      srcDoc={html}
+      srcDoc={artifact.content || "<html><body></body></html>"}
       sandbox="allow-scripts"
       className="w-full h-full border-0 rounded-lg"
       style={{ minHeight: 300 }}
@@ -92,7 +104,7 @@ function ArtifactCard({ artifact, onFullscreen }: { artifact: ArtifactData; onFu
             <span>Generating…</span>
           </div>
         ) : (
-          <HtmlView html={artifact.content} />
+          <HtmlView artifact={artifact} />
         )}
       </div>
     </div>
@@ -154,6 +166,7 @@ interface StreamItem {
   artifactTitle?: string
   artifactType?: string
   artifactStreaming?: boolean
+  artifactFileUrl?: string
 }
 
 const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
@@ -272,7 +285,7 @@ export default function Home() {
               var rm = msgData.messages[mi]
               if (rm.role === "assistant" && rm.meta?.artifacts && Array.isArray(rm.meta.artifacts)) {
                 artList.push(rm.meta.artifacts.map(function(a: any) {
-                  return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", streaming: false }
+                  return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", fileUrl: a.fileUrl || undefined, streaming: false }
                 }))
               }
             }
@@ -311,7 +324,7 @@ export default function Home() {
           var artifacts: ArtifactData[] | undefined
           if (m.meta && m.meta.artifacts && Array.isArray(m.meta.artifacts)) {
             artifacts = m.meta.artifacts.map(function(a: any) {
-              return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", streaming: false }
+              return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", fileUrl: a.fileUrl || undefined, streaming: false }
             })
           }
           msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, ts: m.timestamp || 0 })
@@ -446,7 +459,7 @@ export default function Home() {
                 }
               }
               else if (ev.type === "artifact_start") {
-                pushItem({ id: ev.artifactId, type: "artifact", content: "", artifactTitle: ev.title || ev.artifactType, artifactType: ev.artifactType, artifactStreaming: true })
+                pushItem({ id: ev.artifactId, type: "artifact", content: "", artifactTitle: ev.title || ev.artifactType, artifactType: ev.artifactType, artifactStreaming: !ev.fileUrl, artifactFileUrl: ev.fileUrl })
               }
               else if (ev.type === "artifact_delta") {
                 // Find the artifact item and append delta
@@ -480,6 +493,7 @@ export default function Home() {
           completedArtifacts.push({
             id: items[si].id, type: items[si].artifactType || "html",
             title: items[si].artifactTitle, content: items[si].content,
+            fileUrl: items[si].artifactFileUrl,
             streaming: false,
           })
         }
@@ -492,7 +506,7 @@ export default function Home() {
       var errArtifacts: ArtifactData[] = []
       for (var si2 = 0; si2 < items.length; si2++) {
         if (items[si2].type === "artifact") {
-          errArtifacts.push({ id: items[si2].id, type: items[si2].artifactType || "html", title: items[si2].artifactTitle, content: items[si2].content, streaming: false })
+          errArtifacts.push({ id: items[si2].id, type: items[si2].artifactType || "html", title: items[si2].artifactTitle, content: items[si2].content, fileUrl: items[si2].artifactFileUrl, streaming: false })
         }
       }
       if (err.name === "AbortError") {
@@ -543,7 +557,7 @@ export default function Home() {
             <button onClick={function() { setFullscreenArtifact(null) }} className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded">✕ Close</button>
           </div>
           <div className="flex-1">
-            <HtmlView html={fullscreenArtifact.content} />
+            <HtmlView artifact={fullscreenArtifact} />
           </div>
         </div>
       ) : null}

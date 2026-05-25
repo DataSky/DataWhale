@@ -194,6 +194,7 @@ app.post("/api/chat", async (c) => {
           data.artifactId = event.artifactId
           data.artifactType = event.artifactType
           if (event.title) data.title = event.title
+          if (event.fileUrl) data.fileUrl = event.fileUrl
           break
         case "artifact_delta":
           data.artifactId = event.artifactId
