@@ -9,6 +9,8 @@
  * Stored in SQLite at ~/.datawhale/traces.db
  */
 
+import { getDatabase, saveDatabase } from "./db-pool.js"
+
 export interface TraceRecord {
   id?: number
   traceId: string
@@ -32,54 +34,46 @@ export interface TraceRecord {
 export class TraceStore {
   private dbPath: string
   private _db: any = null
+  private _initialised = false
 
   constructor(dbPath = `${process.env.HOME || "~"}/.datawhale/traces.db`) {
     this.dbPath = dbPath
   }
 
   private async init(): Promise<any> {
-    if (this._db) return this._db
+    if (this._db && this._initialised) return this._db
 
-    const initSqlJs = (await import("sql.js")).default
-    const SQL = await initSqlJs()
-    const fs = await import("node:fs")
-    const path = await import("node:path")
+    this._db = await getDatabase(this.dbPath)
 
-    const dir = path.dirname(this.dbPath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    if (!this._initialised) {
+      this._db.run(`
+        CREATE TABLE IF NOT EXISTS traces (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          trace_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          turn INTEGER NOT NULL DEFAULT 0,
+          event_type TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          model TEXT,
+          latency_ms INTEGER,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          tool_name TEXT,
+          tool_args TEXT,
+          tool_result_summary TEXT,
+          tool_is_error INTEGER DEFAULT 0,
+          error_message TEXT,
+          content_preview TEXT,
+          metadata TEXT
+        )
+      `)
 
-    if (fs.existsSync(this.dbPath)) {
-      const buf = fs.readFileSync(this.dbPath)
-      this._db = new SQL.Database(buf)
-    } else {
-      this._db = new SQL.Database()
+      this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id)`)
+      this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_event ON traces(event_type)`)
+      this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces(timestamp)`)
+
+      this._initialised = true
     }
-
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS traces (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        trace_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        turn INTEGER NOT NULL DEFAULT 0,
-        event_type TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        model TEXT,
-        latency_ms INTEGER,
-        input_tokens INTEGER,
-        output_tokens INTEGER,
-        tool_name TEXT,
-        tool_args TEXT,
-        tool_result_summary TEXT,
-        tool_is_error INTEGER DEFAULT 0,
-        error_message TEXT,
-        content_preview TEXT,
-        metadata TEXT
-      )
-    `)
-
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id)`)
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_event ON traces(event_type)`)
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces(timestamp)`)
 
     return this._db
   }
@@ -108,7 +102,7 @@ export class TraceStore {
         entry.metadata ? JSON.stringify(entry.metadata) : null,
       ]
     )
-    await this.save()
+    await saveDatabase(this.dbPath)
   }
 
   async query(sessionId?: string, eventType?: string, limit = 100): Promise<TraceRecord[]> {
@@ -190,12 +184,5 @@ export class TraceStore {
       contentPreview: row.content_preview as string || undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     }
-  }
-
-  private async save(): Promise<void> {
-    if (!this._db) return
-    const fs = await import("node:fs")
-    const data = this._db.export()
-    fs.writeFileSync(this.dbPath, Buffer.from(data))
   }
 }

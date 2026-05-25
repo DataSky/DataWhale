@@ -1,11 +1,11 @@
 /**
- * @datawhale/agent — Span & Query types
+ * @datawhale/agent — Query / Turn / Span 类型定义
  * 
  * Session → Query → Turn → Span 四级模型
- * 定义来自 docs/CONCEPT_MODEL.md
+ * 来自 docs/CONCEPT_MODEL.md
  */
 
-// ─── Span Types ──────────────────────────────────────────────────────────
+// ─── Span — 原子操作片段 ──────────────────────────────────────────────────
 
 export type Span = ThinkingSpan | ToolCallSpan | TextSpan
 
@@ -34,34 +34,51 @@ export interface TextSpan {
   completedAt?: number
 }
 
-// ─── Query Types ─────────────────────────────────────────────────────────
+// ─── Turn — Agent 一轮完整执行（LLM → 工具 → 结果） ──────────────────────
+
+export interface Turn {
+  spans: Span[]
+  startedAt: number
+  completedAt?: number
+}
+
+// ─── Query — 用户一次提问 + Agent 完整回复 ────────────────────────────────
 
 export interface Query {
   id: string
   sessionId: string
   userContent: string
-  spans: Span[]
+  turns: Turn[]
   model: string
   usage?: { inputTokens: number; outputTokens: number }
   createdAt: number
 }
 
-// ─── Helper: build a Query from collected spans ──────────────────────────
+// ─── Helper ────────────────────────────────────────────────────────────────
 
 export function makeQuery(opts: {
   sessionId: string
   userContent: string
-  spans: Span[]
+  turns?: Turn[]
   model?: string
   usage?: { inputTokens: number; outputTokens: number }
 }): Query {
   return {
-    id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     sessionId: opts.sessionId,
     userContent: opts.userContent,
-    spans: opts.spans,
+    turns: opts.turns || [],
     model: opts.model || "unknown",
     usage: opts.usage,
     createdAt: Date.now(),
+  }
+}
+
+/** Create a Turn from spans */
+export function makeTurn(spans: Span[]): Turn {
+  return {
+    spans,
+    startedAt: spans.length > 0 ? spans[0].startedAt : Date.now(),
+    completedAt: spans.length > 0 ? spans[spans.length - 1].completedAt || Date.now() : Date.now(),
   }
 }

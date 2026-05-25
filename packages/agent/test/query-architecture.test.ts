@@ -6,6 +6,7 @@
 import { QueryStore } from "../src/query-store.js"
 import { makeQuery } from "../src/query-types.js"
 import type { Query, Span, ThinkingSpan, ToolCallSpan, TextSpan } from "../src/query-types.js"
+import { releaseDatabase } from "../src/db-pool.js"
 
 let passed = 0
 let failed = 0
@@ -62,6 +63,8 @@ async function test_query_store_crud() {
   // Count all
   const cntAll = await store.count()
   if (cntAll !== 1) throw new Error(`Expected all count 1, got ${cntAll}`)
+
+  releaseDatabase(":memory:")
 }
 
 // ─── Test 2: makeQuery helper ─────────────────────────────────────────────
@@ -113,6 +116,8 @@ async function test_multiple_queries() {
 
   const other = await store.loadQueries("other")
   if (other.length !== 1) throw new Error(`Expected 1 query in other, got ${other.length}`)
+
+  releaseDatabase(":memory:")
 }
 
 // ─── Test 5: Empty spans ──────────────────────────────────────────────────
@@ -125,9 +130,122 @@ async function test_empty_spans() {
   const loaded = await store.loadQueries("empty")
   if (loaded.length !== 1) throw new Error("Query not saved")
   if (loaded[0].spans.length !== 0) throw new Error("Expected empty spans")
+
+  releaseDatabase(":memory:")
 }
 
-// ─── Test 6: App-server API endpoints (integration) ───────────────────────
+// ─── Test 6: Dual-format writes (QueryStore → messages table) ─────────────
+
+async function test_dual_format_writes() {
+  const store = new QueryStore(":memory:")
+
+  const spans: Span[] = [
+    { type: "thinking", content: "Let me analyze...", startedAt: 1000, completedAt: 2000 } as ThinkingSpan,
+    { type: "tool_call", id: "tc1", name: "query", arguments: '{"sql":"SELECT 1"}', result: "1 row", isError: false, startedAt: 2000, completedAt: 3000 } as ToolCallSpan,
+    { type: "text", content: "Analysis complete: 1 result found.", startedAt: 3000, completedAt: 3500 } as TextSpan,
+  ]
+
+  const q: Query = {
+    id: "dual_test_1",
+    sessionId: "session_dual",
+    userContent: "What is 1+1?",
+    spans,
+    model: "deepseek-v4-pro",
+    usage: { inputTokens: 10, outputTokens: 20 },
+    createdAt: 1700000000000,
+  }
+
+  await store.saveQuery(q)
+
+  // Verify new format: queries table
+  const loaded = await store.loadQueries("session_dual")
+  if (loaded.length !== 1) throw new Error(`Expected 1 query, got ${loaded.length}`)
+  if (loaded[0].spans[1].type !== "tool_call") throw new Error("Tool call span not preserved")
+
+  // Verify old format: messages table was written
+  const db = await store.init()
+  const msgStmt = db.prepare(
+    "SELECT role, content, thinking, meta FROM messages WHERE session_id = ? ORDER BY timestamp ASC"
+  )
+  msgStmt.bind(["session_dual"])
+
+  const messages: any[] = []
+  while (msgStmt.step()) {
+    messages.push(msgStmt.getAsObject())
+  }
+  msgStmt.free()
+
+  // Should have 2 messages: user + assistant
+  if (messages.length !== 2) throw new Error(`Expected 2 messages (user + assistant), got ${messages.length}`)
+
+  // User message
+  const userMsg = messages[0]
+  if (userMsg.role !== "user") throw new Error(`Expected user role, got ${userMsg.role}`)
+  if (userMsg.content !== "What is 1+1?") throw new Error(`Wrong user content: "${userMsg.content}"`)
+
+  // Assistant message
+  const assistantMsg = messages[1]
+  if (assistantMsg.role !== "assistant") throw new Error(`Expected assistant role, got ${assistantMsg.role}`)
+  if (assistantMsg.thinking !== "Let me analyze...") throw new Error(`Wrong thinking: "${assistantMsg.thinking}"`)
+  if (assistantMsg.content !== "Analysis complete: 1 result found.") throw new Error(`Wrong text content: "${assistantMsg.content}"`)
+
+  // Tool calls in meta
+  const meta = JSON.parse(assistantMsg.meta as string)
+  if (!meta.toolCalls || meta.toolCalls.length !== 1) throw new Error("Expected 1 tool call in meta")
+  if (meta.toolCalls[0].name !== "query") throw new Error(`Wrong tool name: ${meta.toolCalls[0].name}`)
+  if (meta.toolCalls[0].result !== "1 row") throw new Error(`Wrong tool result: ${meta.toolCalls[0].result}`)
+
+  // Usage in meta
+  if (!meta.usage || meta.usage.inputTokens !== 10) throw new Error("Usage not preserved in meta")
+
+  // Verify sessions table
+  const sessStmt = db.prepare("SELECT id, title FROM sessions WHERE id = ?")
+  sessStmt.bind(["session_dual"])
+  if (!sessStmt.step()) throw new Error("Session row not created")
+  const sessionRow = sessStmt.getAsObject()
+  if (sessionRow.title !== "What is 1+1?") throw new Error(`Wrong session title: "${sessionRow.title}"`)
+  sessStmt.free()
+
+  releaseDatabase(":memory:")
+}
+
+// ─── Test 7: Dual-format with only text spans (no tool calls) ─────────────
+
+async function test_dual_format_text_only() {
+  const store = new QueryStore(":memory:")
+
+  const q = makeQuery({
+    sessionId: "session_text_only",
+    userContent: "Hello",
+    spans: [{ type: "text", content: "Hi there!", startedAt: 100, completedAt: 200 }],
+    model: "deepseek",
+  })
+
+  await store.saveQuery(q)
+
+  const db = await store.init()
+  const msgStmt = db.prepare(
+    "SELECT role, content, thinking, meta FROM messages WHERE session_id = ? ORDER BY timestamp ASC"
+  )
+  msgStmt.bind(["session_text_only"])
+  
+  const messages: any[] = []
+  while (msgStmt.step()) messages.push(msgStmt.getAsObject())
+  msgStmt.free()
+
+  if (messages.length !== 2) throw new Error(`Expected 2 messages, got ${messages.length}`)
+  
+  const assistantMsg = messages[1]
+  if (assistantMsg.content !== "Hi there!") throw new Error(`Wrong text: "${assistantMsg.content}"`)
+  if (assistantMsg.thinking) throw new Error("Expected no thinking content")
+
+  const meta = JSON.parse(assistantMsg.meta as string)
+  if (meta.toolCalls) throw new Error("Expected no toolCalls in meta for text-only response")
+
+  releaseDatabase(":memory:")
+}
+
+// ─── Test 8: App-server API endpoints (integration) ───────────────────────
 
 async function test_api_queries_endpoint() {
   const BASE = "http://localhost:3000"
@@ -166,6 +284,8 @@ async function run() {
   await check("Span type safety", test_span_type_safety)()
   await check("Multiple queries", test_multiple_queries)()
   await check("Empty spans", test_empty_spans)()
+  await check("Dual-format writes", test_dual_format_writes)()
+  await check("Dual-format text only", test_dual_format_text_only)()
 
   // Integration test (requires running server)
   try {

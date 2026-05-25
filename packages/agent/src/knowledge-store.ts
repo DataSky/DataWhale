@@ -31,6 +31,7 @@ export interface KnowledgeEntry {
 
 export class KnowledgeStore {
   private dbPath: string
+  private _db: any = null
   private _initialised = false
 
   constructor(dbPath = `${process.env.HOME || "~"}/.datawhale/knowledge.db`) {
@@ -38,10 +39,12 @@ export class KnowledgeStore {
   }
 
   private async init(): Promise<any> {
-    const db = await getDatabase(this.dbPath)
+    if (this._db && this._initialised) return this._db
+
+    this._db = await getDatabase(this.dbPath)
 
     if (!this._initialised) {
-      db.run(`
+      this._db.run(`
         CREATE TABLE IF NOT EXISTS knowledge (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           domain TEXT NOT NULL,
@@ -55,13 +58,13 @@ export class KnowledgeStore {
         )
       `)
 
-      db.run(`CREATE INDEX IF NOT EXISTS idx_know_domain ON knowledge(domain)`)
-      db.run(`CREATE INDEX IF NOT EXISTS idx_know_session ON knowledge(source_session)`)
+      this._db.run(`CREATE INDEX IF NOT EXISTS idx_know_domain ON knowledge(domain)`)
+      this._db.run(`CREATE INDEX IF NOT EXISTS idx_know_session ON knowledge(source_session)`)
 
       this._initialised = true
     }
 
-    return db
+    return this._db
   }
 
   /** Add a knowledge entry. Deduplicates by fact text. */
@@ -71,7 +74,6 @@ export class KnowledgeStore {
     // Check for duplicates
     const existing = this.queryOne("SELECT id, hit_count, confidence FROM knowledge WHERE fact = ?", [entry.fact])
     if (existing) {
-      // Update existing: bump confidence and update time
       const newConf = Math.min(1.0, (existing.confidence as number) + 0.1)
       db.run("UPDATE knowledge SET updated_at = ?, confidence = ? WHERE id = ?", [
         Date.now(), newConf, existing.id,
@@ -96,11 +98,9 @@ export class KnowledgeStore {
   async search(query: string, limit = 5): Promise<KnowledgeEntry[]> {
     const db = await this.init()
 
-    // Simple keyword matching: split query into words, match against keywords + domain + fact
     const words = query.toLowerCase().split(/[\s,，。？！、]+/).filter(w => w.length > 1)
     if (words.length === 0) return []
 
-    // Build LIKE conditions
     const conditions = words.map(() => "(domain LIKE ? OR fact LIKE ? OR keywords LIKE ?)").join(" OR ")
     const params: string[] = []
     for (const w of words) {
@@ -113,7 +113,6 @@ export class KnowledgeStore {
       [...params, limit]
     )
 
-    // Update hit counts for retrieved entries
     for (const row of rows) {
       db.run("UPDATE knowledge SET hit_count = hit_count + 1 WHERE id = ?", [row.id])
     }
@@ -155,11 +154,16 @@ export class KnowledgeStore {
   }
 
   private queryAll(sql: string, params: any[]): Record<string, unknown>[] {
-    if (!this._initialised) return []
-    const stmt = (getDatabase as any)._pool?.get?.(this.dbPath)?.db?.prepare?.(sql)
-    // We need a synchronous way to get the db... let's restructure slightly
-    // Actually, let me fix this - we need a sync getter or cache
-    return []
+    if (!this._db) return []
+    const stmt = this._db.prepare(sql)
+    if (!stmt) return []
+    stmt.bind(params)
+    const results: Record<string, unknown>[] = []
+    while (stmt.step()) {
+      results.push(stmt.getAsObject())
+    }
+    stmt.free()
+    return results
   }
 
   private rowToEntry(row: Record<string, unknown>): KnowledgeEntry {

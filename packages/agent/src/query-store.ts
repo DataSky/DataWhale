@@ -10,92 +10,82 @@
  */
 
 import type { Query, Span, ToolCallSpan } from "./query-types.js"
+import { getDatabase, saveDatabase } from "./db-pool.js"
 
 export class QueryStore {
   private dbPath: string
-  private _db: any = null
+  private _initialised = false
 
   constructor(dbPath = `${process.env.HOME || "~"}/.datawhale/sessions.db`) {
     this.dbPath = dbPath
   }
 
   async init(): Promise<any> {
-    if (this._db) return this._db
+    const db = await getDatabase(this.dbPath)
 
-    const initSqlJs = (await import("sql.js")).default
-    const SQL = await initSqlJs()
-    const fs = await import("node:fs")
-    const path = await import("node:path")
+    if (!this._initialised) {
+      // ── New format: queries table ───────────────────────────────────────────
+      db.run(`
+        CREATE TABLE IF NOT EXISTS queries (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          user_content TEXT NOT NULL,
+          spans_json TEXT NOT NULL,
+          model TEXT DEFAULT 'unknown',
+          usage_json TEXT,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        )
+      `)
 
-    const dir = path.dirname(this.dbPath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      db.run(`CREATE INDEX IF NOT EXISTS idx_queries_session ON queries(session_id)`)
+      db.run(`CREATE INDEX IF NOT EXISTS idx_queries_created ON queries(created_at)`)
 
-    if (fs.existsSync(this.dbPath)) {
-      const buf = fs.readFileSync(this.dbPath)
-      this._db = new SQL.Database(buf)
-    } else {
-      this._db = new SQL.Database()
+      // ── Old format: sessions and messages tables (compatible writes) ────────
+      // These tables match SessionStore's schema exactly so both stores
+      // can safely operate on the same shared Database instance via db-pool.
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sessions (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          message_count INTEGER DEFAULT 0,
+          model TEXT DEFAULT 'deepseek'
+        )
+      `)
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          thinking TEXT,
+          timestamp INTEGER NOT NULL,
+          meta TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id)
+        )
+      `)
+
+      // ── Auto-migration: add missing columns (same as SessionStore) ──────────
+      try {
+        const cols = db.exec("PRAGMA table_info(messages)")
+        if (cols[0]) {
+          const colNames = cols[0].values.map((r: any) => r[1])
+          if (!colNames.includes("thinking")) {
+            db.run("ALTER TABLE messages ADD COLUMN thinking TEXT")
+          }
+          if (!colNames.includes("meta")) {
+            db.run("ALTER TABLE messages ADD COLUMN meta TEXT")
+          }
+        }
+      } catch {}
+
+      this._initialised = true
     }
 
-    // ── New format: queries table ─────────────────────────────────────────────
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS queries (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        user_content TEXT NOT NULL,
-        spans_json TEXT NOT NULL,
-        model TEXT DEFAULT 'unknown',
-        usage_json TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      )
-    `)
-
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_queries_session ON queries(session_id)`)
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_queries_created ON queries(created_at)`)
-
-    // ── Old format: sessions and messages tables (compatible writes) ──────────
-    // These tables match SessionStore's schema exactly so both stores
-    // can safely operate on the same file.
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        message_count INTEGER DEFAULT 0,
-        model TEXT DEFAULT 'deepseek'
-      )
-    `)
-
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        thinking TEXT,
-        timestamp INTEGER NOT NULL,
-        meta TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      )
-    `)
-
-    // ── Auto-migration: add missing columns (same as SessionStore) ────────────
-    try {
-      const cols = this._db.exec("PRAGMA table_info(messages)")
-      if (cols[0]) {
-        const colNames = cols[0].values.map((r: any) => r[1])
-        if (!colNames.includes("thinking")) {
-          this._db.run("ALTER TABLE messages ADD COLUMN thinking TEXT")
-        }
-        if (!colNames.includes("meta")) {
-          this._db.run("ALTER TABLE messages ADD COLUMN meta TEXT")
-        }
-      }
-    } catch {}
-
-    return this._db
+    return db
   }
 
   // ─── Core: Query CRUD ──────────────────────────────────────────────────────
@@ -112,7 +102,7 @@ export class QueryStore {
       query.id,
       query.sessionId,
       query.userContent,
-      JSON.stringify(query.spans),
+      JSON.stringify(query.turns || (query as any).spans || []),
       query.model,
       query.usage ? JSON.stringify(query.usage) : null,
       query.createdAt,
@@ -120,10 +110,10 @@ export class QueryStore {
     stmt.free()
 
     // 2) Write old-format compatible: sessions + messages tables
-    this._ensureSession(query.sessionId, query.userContent.slice(0, 40), query.model)
-    this._writeMessages(query)
+    this._ensureSession(db, query.sessionId, query.userContent.slice(0, 40), query.model)
+    this._writeMessages(db, query)
 
-    await this._save()
+    await saveDatabase(this.dbPath)
   }
 
   async loadQueries(sessionId: string): Promise<Query[]> {
@@ -137,11 +127,18 @@ export class QueryStore {
     const results: Query[] = []
     while (stmt.step()) {
       const row = stmt.getAsObject()
+      const parsed = JSON.parse(row.spans_json as string)
+      let turns: import("./query-types.js").Turn[] = []
+      if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0] as any).spans) {
+        turns = parsed as import("./query-types.js").Turn[]
+      } else if (Array.isArray(parsed)) {
+        turns = [{ spans: parsed as Span[], startedAt: row.created_at as number, completedAt: row.created_at as number }]
+      }
       results.push({
         id: row.id as string,
         sessionId: row.session_id as string,
         userContent: row.user_content as string,
-        spans: JSON.parse(row.spans_json as string) as Span[],
+        turns,
         model: row.model as string || "unknown",
         usage: row.usage_json ? JSON.parse(row.usage_json as string) : undefined,
         createdAt: row.created_at as number,
@@ -167,17 +164,16 @@ export class QueryStore {
   // ─── Compatible writes: old-format sessions + messages ─────────────────────
 
   /** Ensure a session row exists so FK constraint is satisfied. */
-  private _ensureSession(sessionId: string, title: string, model: string): void {
+  private _ensureSession(db: any, sessionId: string, title: string, model: string): void {
     const now = Date.now()
-    this._db.run(
+    db.run(
       `INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at, model) VALUES (?, ?, ?, ?, ?)`,
       [sessionId, title || "Untitled", now, now, model]
     )
   }
 
   /** Convert Query spans into old-format message rows and insert them. */
-  private _writeMessages(query: Query): void {
-    const db = this._db
+  private _writeMessages(db: any, query: Query): void {
     const insertStmt = db.prepare(
       "INSERT OR IGNORE INTO messages (session_id, role, content, thinking, timestamp, meta) VALUES (?, ?, ?, ?, ?, ?)"
     )
@@ -232,14 +228,5 @@ export class QueryStore {
     ])
 
     insertStmt.free()
-  }
-
-  // ─── Persistence ───────────────────────────────────────────────────────────
-
-  private async _save(): Promise<void> {
-    if (!this._db) return
-    const fs = await import("node:fs")
-    const data = this._db.export()
-    fs.writeFileSync(this.dbPath, Buffer.from(data))
   }
 }

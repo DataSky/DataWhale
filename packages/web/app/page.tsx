@@ -89,6 +89,34 @@ export default function Home() {
   const selectSession = useCallback(async (id: string) => {
     setActiveId(id)
     try {
+      // Try new Query API first (Session → Query → Turn → Span)
+      const queries = await fetchJSON(`/api/queries?sessionId=${id}`)
+      if (queries && queries.length > 0) {
+        const msgs: Msg[] = []
+        for (const q of queries) {
+          // User message per query
+          msgs.push({ id: "uq" + q.id, role: "user", content: q.userContent || "", ts: q.createdAt || Date.now() })
+          // Build assistant message from turns
+          let thinking = ""
+          let text = ""
+          const tools: any[] = []
+          for (const turn of q.turns || []) {
+            for (const span of turn.spans || []) {
+              if (span.type === "thinking") thinking += (thinking ? "\n" : "") + (span.content || "")
+              else if (span.type === "text") text += (text ? "\n" : "") + (span.content || "")
+              else if (span.type === "tool_call") {
+                tools.push({ id: span.id, name: span.name, status: span.isError ? "error" : "done", preview: (span.result || "").slice(0, 80), detail: span.result || "" })
+              }
+            }
+          }
+          msgs.push({ id: "aq" + q.id, role: "assistant", content: text, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: q.createdAt || Date.now() })
+        }
+        setMessages(msgs)
+        return
+      }
+    } catch {}
+    // Fallback to old messages API
+    try {
       const data = await fetchJSON(`/api/sessions/${id}`)
       if (data.messages) {
         // Filter out internal tool_result messages, keep user + assistant

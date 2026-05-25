@@ -232,6 +232,20 @@ export class Agent {
         this.state = { ...this.state, status: "done" }
       }
 
+      // Build and emit Query from collected spans
+      const spans = this._currentSpans
+      const query = makeQuery({
+        sessionId: (this.state.messages[0]?.meta?.sessionId as string) || "",
+        userContent: this._currentUserContent,
+        model: typeof this.config.model === "string" ? this.config.model : this.config.model.model,
+      })
+      if (spans.length > 0) {
+        query.turns = [makeTurn(spans)]
+      }
+      this.emit({ type: "query_end", query })
+      this._currentSpans = []
+      this._currentUserContent = ""
+
       this.emit({ type: "agent_end", state: this.state })
       return this.state
     } catch (err) {
@@ -674,6 +688,113 @@ export class Agent {
   }
 }
 
+// ─── Shared Knowledge Extraction ──────────────────────────────────────────
+
+/**
+ * Extract structured knowledge facts from conversation messages.
+ * 
+ * This is the canonical knowledge extraction pipeline shared by CLI and
+ * app-server. It takes raw LLM output (the JSON array text) and handles
+ * parsing + storage. The caller is responsible for calling the LLM with
+ * the extracted summary; this function only handles the post-LLM phase.
+ * 
+ * See also: `buildKnowledgeSummary` for generating the LLM prompt input.
+ */
+export async function ingestKnowledgeJson(
+  rawJsonText: string,
+  sessionId: string,
+  store: KnowledgeStore,
+): Promise<number> {
+  if (!rawJsonText || rawJsonText.length < 3) return 0
+
+  // Strip markdown code fences
+  let clean = rawJsonText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim()
+
+  let entries: Array<{ domain: string; fact: string; keywords: string }> = []
+
+  // Try array format: [...]
+  const arrayMatch = clean.match(/^\s*\[([\s\S]*)\]\s*$/)
+  if (arrayMatch) {
+    try { entries = JSON.parse(arrayMatch[0]) } catch { /* fall through */ }
+  }
+
+  // Fallback: single object {...}
+  if (entries.length === 0) {
+    const objMatch = clean.match(/^\s*\{[\s\S]*\}\s*$/)
+    if (objMatch) {
+      try { const obj = JSON.parse(objMatch[0]); entries = [obj] } catch { /* fall through */ }
+    }
+  }
+
+  // Last-resort: find any JSON array anywhere in text
+  if (entries.length === 0) {
+    const anyMatch = clean.match(/\[[\s\S]*\]/)
+    if (anyMatch) {
+      try { entries = JSON.parse(anyMatch[0]) } catch { /* fall through */ }
+    }
+  }
+
+  let added = 0
+  for (const entry of entries) {
+    if (entry.fact && entry.fact.length > 5) {
+      await store.add({
+        domain: entry.domain || "general",
+        fact: entry.fact,
+        keywords: entry.keywords || "",
+        sourceSession: sessionId,
+        createdAt: Date.now(),
+        confidence: 0.6,
+      })
+      added++
+    }
+  }
+
+  return added
+}
+
+/**
+ * Build a plain-text summary of a conversation suitable as the user-content
+ * input for an LLM-based knowledge extraction prompt.
+ */
+export function buildKnowledgeSummary(messages: AgentMessage[]): string {
+  const userMsgs = messages.filter((m) => m.role === "user")
+  const assistantMsgs = messages.filter((m) => m.role === "assistant")
+  if (userMsgs.length === 0 || assistantMsgs.length === 0) return ""
+
+  return messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => {
+      const text =
+        typeof m.content === "string"
+          ? m.content
+          : (Array.isArray(m.content)
+              ? m.content
+                  .filter((p: any) => p.type === "text")
+                  .map((p: any) => p.text)
+                  .join(" ")
+              : "")
+      return `[${m.role}]: ${text.slice(0, 300)}`
+    })
+    .join("\n")
+}
+
+/**
+ * Standard system prompt for knowledge extraction via LLM.
+ */
+export const KNOWLEDGE_EXTRACTION_SYSTEM_PROMPT = `CRITICAL: Output ONLY a JSON array, no other text, no markdown formatting, no explanations.
+
+From the conversation below, extract 1-3 key facts about the data that would be valuable for future sessions. Focus on:
+- Data schema (table names, column meanings, data types)
+- Business semantics (what values mean, domain knowledge)
+- Data quality observations (patterns, anomalies, edge cases)
+
+Format: [{"domain":"...","fact":"...","keywords":"keyword1,keyword2"}]
+
+Example response (this is the ONLY format you should output):
+[{"domain":"sales","fact":"The region column contains values: East, West, North, South","keywords":"region,sales,geography"}]
+
+DO NOT include any text before or after the JSON array.`
+
 // ─── Re-exports ───────────────────────────────────────────────────────────────
 
 export { SessionStore } from "./session-store.js"
@@ -688,3 +809,4 @@ export type { Message, MessagePart, ToolDef, ModelConfig }
 export { QueryStore } from "./query-store.js"
 export type { Query, Span, ThinkingSpan, ToolCallSpan, TextSpan } from "./query-types.js"
 export { makeQuery } from "./query-types.js"
+export { getDatabase, saveDatabase, releaseDatabase, poolSize } from "./db-pool.js"

@@ -139,7 +139,7 @@ app.post("/api/chat", async (c) => {
         case "query_end":
           data.queryId = event.query.id
           event.query.sessionId = sessionId
-          queryStore.saveQuery(event.query).catch(() => {})
+          queryStore.saveQuery(event.query).catch((e: any) => console.error("[query] save failed:", e?.message || e))
           break
       }
 
