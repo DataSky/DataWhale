@@ -849,6 +849,12 @@ function buildSystemPrompt(): string {
   const dateStr = now.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "long" })
   const timeStr = now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
   const isoStr = now.toISOString().replace("T", " ").slice(0, 19)
+  
+  // Compute yesterday / tomorrow programmatically (avoid search)
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
+  const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1)
+  const yesterdayStr = yesterday.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "long" })
+  const tomorrowStr = tomorrow.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "long" })
 
   return `<system_prompt>
 <!-- DataWhale 系统提示词 · 参考 Claude Prompting Best Practices · 结构化 XML 标签 -->
@@ -857,7 +863,9 @@ function buildSystemPrompt(): string {
 </role>
 
 <current_context>
-${dateStr} · ${timeStr} · ISO: ${isoStr}
+${dateStr} · ${timeStr} · ISO: ${isoStr} · 时区: Asia/Shanghai (UTC+8)
+昨日: ${yesterdayStr}
+明日: ${tomorrowStr}
 </current_context>
 
 <capabilities>
@@ -878,6 +886,7 @@ ${dateStr} · ${timeStr} · ISO: ${isoStr}
 <rule name="verification">不确定时先验证再陈述——用 query 确认假设，不要凭空断言。</rule>
 <rule name="be_concise">简洁而透彻，质量优先于数量。</rule>
 <rule name="language">始终用中文回答用户。代码、SQL、技术术语保持原样。</rule>
+<rule name="date_time">涉及日期/时间/星期的问题，直接使用 <current_context> 中的信息回答。不要搜索。需要计算时用 execute_python。</rule>
 </rules>
 
 <tools>
