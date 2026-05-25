@@ -10,6 +10,10 @@
 
 import type { Message, MessagePart, ToolDef, ToolResultPart } from "@datawhale/ai"
 import { chatStream, resolveModel, type ModelConfig } from "@datawhale/ai"
+import { SkillStore } from "./skill-store.js"
+import type { Skill, SkillMeta } from "./skill-store.js"
+import { makeQuery, makeTurn } from "./query-types.js"
+import type { Span, Query, ThinkingSpan, ToolCallSpan, TextSpan } from "./query-types.js"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
