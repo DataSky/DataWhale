@@ -301,6 +301,7 @@ app.get("/api/files/:sessionId/:filename", async (c) => {
     svg: "image/svg+xml", webp: "image/webp", pdf: "application/pdf",
     csv: "text/csv", json: "application/json", txt: "text/plain",
     md: "text/markdown",
+    html: "text/html", htm: "text/html",
   }
   return new Response(file, {
     headers: { "Content-Type": mimeTypes[ext || ""] || "application/octet-stream" }
