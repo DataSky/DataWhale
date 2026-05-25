@@ -173,17 +173,24 @@ export class SessionStore {
     }
 
     for (const msg of newMessages) {
-      // Flatten content array to pure text for consistent display
-      const rawContent = typeof msg.content === "string"
-        ? msg.content
-        : (Array.isArray(msg.content)
-            ? msg.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("")
-            : "")
+      // Flatten content: handle tool_result specially (its content is in type="tool_result" parts, not "text")
+      let rawContent: string
+      if (typeof msg.content === "string") {
+        rawContent = msg.content
+      } else if (msg.role === "tool_result" && Array.isArray(msg.content)) {
+        const trParts = msg.content.filter((p: any) => p && p.type === "tool_result")
+        rawContent = trParts.map((p: any) => p.content || "").join("")
+      } else if (Array.isArray(msg.content)) {
+        rawContent = msg.content.filter(function(p: any) { return p && p.type === "text" }).map(function(p: any) { return p.text || "" }).join("")
+      } else {
+        rawContent = ""
+      }
       // Collapse one-word-per-line patterns (DeepSeek V4 quirk)
       const content = collapseNewlines(rawContent)
       // Extract tool calls into meta for frontend display (include results)
       const toolCalls = Array.isArray(msg.content)
         ? msg.content.filter((p: any) => p && p.type === "tool_call").map((tc: any) => ({
+            id: tc.id,  // preserve original toolCallId for matching with tool_result
             name: tc.name,
             args: tc.arguments ? JSON.stringify(tc.arguments) : "{}",
             result: toolResults[tc.id] || "",
@@ -192,6 +199,15 @@ export class SessionStore {
 
       // Merge original meta with extracted toolCalls (preserve Agent-provided meta)
       const mergedMeta: Record<string, unknown> = { ...(msg.meta || {}) }
+
+      // Preserve toolCallId for tool_result messages so loadMessages can rebuild them
+      if (msg.role === "tool_result" && Array.isArray(msg.content)) {
+        const trParts = msg.content.filter((p: any) => p && p.type === "tool_result")
+        if (trParts.length > 0 && trParts[0].toolCallId) {
+          mergedMeta.toolCallId = trParts[0].toolCallId
+        }
+      }
+
       const allToolCalls = [
         ...((msg.meta?.toolCalls as any[]) || []),
         ...toolCalls.map((tc: any) => ({ ...tc, id: tc.id || `tc_${Date.now()}` }))
@@ -231,9 +247,17 @@ export class SessionStore {
       let meta: Record<string, unknown> | undefined
       try { meta = row.meta ? JSON.parse(row.meta as string) : undefined } catch {}
 
-      // Reconstruct content: if meta has toolCalls, build proper content array
+      // Reconstruct content: if meta has toolCalls/toolCallId, build proper content array
       let messageContent: string | any[]
-      if (meta?.toolCalls && Array.isArray(meta.toolCalls) && role === "assistant") {
+      if (role === "tool_result" && meta?.toolCallId) {
+        // Preserve tool_result structure so LLM receives valid tool messages
+        messageContent = [{
+          type: "tool_result",
+          toolCallId: meta.toolCallId as string,
+          content: content,
+          isError: false,
+        }]
+      } else if (meta?.toolCalls && Array.isArray(meta.toolCalls) && role === "assistant") {
         const parts: any[] = (meta.toolCalls as any[]).map((tc: any) => ({
           type: "tool_call",
           id: tc.id || `tc_${Date.now()}`,
