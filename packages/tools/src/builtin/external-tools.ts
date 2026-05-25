@@ -323,8 +323,18 @@ const executePythonTool: AgentTool = {
     }
 
     if (savedFiles.length > 0) {
-      output += `\n[Saved ${savedFiles.length} file(s) to ${exportDir}/:]`
-      for (const f of savedFiles) output += `\n  → ${f.split("/").pop()}`
+      const imageExts = /\.(png|jpe?g|gif|svg|webp)$/i
+      const imageFiles = savedFiles.filter(f => imageExts.test(f))
+      const otherFiles = savedFiles.filter(f => !imageExts.test(f))
+      output += "\n"
+      for (const f of imageFiles) {
+        const name = f.split("/").pop()!
+        output += `\n![${name}](/api/files/${_sessionId}/${name})`
+      }
+      if (otherFiles.length > 0) {
+        output += `\n\n📄 ${otherFiles.length} data file(s):`
+        for (const f of otherFiles) output += `\n  → ${f.split("/").pop()}`
+      }
     }
 
     return { content: output, details }
