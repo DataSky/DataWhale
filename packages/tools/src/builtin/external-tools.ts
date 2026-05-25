@@ -340,8 +340,11 @@ const executePythonTool: AgentTool = {
         output += `\n![${name}](/api/files/${_sessionId}/${name})`
       }
       if (otherFiles.length > 0) {
-        output += `\n\n📄 ${otherFiles.length} data file(s):`
-        for (const f of otherFiles) output += `\n  → ${f.split("/").pop()}`
+        output += `\n\n📄 ${otherFiles.length} data file(s) saved (use /api/files/ links to re-read):`
+        for (const f of otherFiles) {
+          const name = f.split("/").pop()!
+          output += `\n  → [${name}](/api/files/${_sessionId}/${name})`
+        }
       }
     }
 
@@ -403,6 +406,60 @@ const sandboxDownloadTool: AgentTool = {
     return {
       content: `Downloaded ${filePath} → ${localPath} (${size} bytes)`,
       details: { sandboxPath: filePath, localPath, size },
+    }
+  },
+}
+
+// ─── Read Local File Tool ────────────────────────────────────────────────────
+
+const readLocalFileTool: AgentTool = {
+  name: "read_local_file",
+  description:
+    "Read a previously-exported file from the local plots directory (~/.datawhale/plots/). " +
+    "Use this when you need to re-read a file that was generated in a previous execute_python call " +
+    "(e.g., report.md, results.csv). The sessionId is automatically provided. " +
+    "All files exported by execute_python are stored under ~/.datawhale/plots/{sessionId}/.",
+  parameters: {
+    type: "object",
+    properties: {
+      filename: {
+        type: "string",
+        description: "Filename to read (e.g., '1779722706025_2_report.md'). Use sandbox_list to find exact names.",
+      },
+    },
+    required: ["filename"],
+  },
+  executionMode: "sequential",
+  execute: async (_id, params) => {
+    const filename = params.filename as string
+    const fs = await import("node:fs")
+    const pathMod = await import("node:path")
+    const baseDir = `${process.env.HOME || "~"}/.datawhale/plots`
+    const filePath = pathMod.join(baseDir, _sessionId || "", filename)
+
+    if (!fs.existsSync(filePath)) {
+      // List available files for the session to help the agent
+      const dir = pathMod.join(baseDir, _sessionId || "")
+      let listing = ""
+      try {
+        const files = fs.readdirSync(dir)
+        listing = "\nAvailable files: " + files.join(", ")
+      } catch {}
+      return {
+        content: `File not found: ${filePath}${listing}`,
+        details: { error: "not_found" },
+      }
+    }
+
+    const content = fs.readFileSync(filePath, "utf-8")
+    const stat = fs.statSync(filePath)
+    const maxLen = 8000
+    const truncated = content.length > maxLen
+    const text = truncated ? content.slice(0, maxLen) + `\n... (truncated, ${content.length} chars total)` : content
+
+    return {
+      content: `📄 ${filename} (${stat.size} bytes):\n\n${text}`,
+      details: { path: filePath, size: stat.size, truncated },
     }
   },
 }
@@ -513,11 +570,12 @@ const listWorkspaceFilesTool: AgentTool = {
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export const ExternalTools = {
-  all: [webSearchTool, executePythonTool, sandboxDownloadTool, mountOSSTool] as AgentTool[],
+  all: [webSearchTool, executePythonTool, sandboxDownloadTool, readLocalFileTool, mountOSSTool] as AgentTool[],
   webSearch: webSearchTool,
   executePython: executePythonTool,
   listWorkspaceFiles: listWorkspaceFilesTool,
   sandboxDownload: sandboxDownloadTool,
+  readLocalFile: readLocalFileTool,
   closeSandbox,
   pauseSandbox,
 }

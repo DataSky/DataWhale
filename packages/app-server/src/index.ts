@@ -282,6 +282,7 @@ app.get("/api/files/:sessionId/:filename", async (c) => {
     png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
     svg: "image/svg+xml", webp: "image/webp", pdf: "application/pdf",
     csv: "text/csv", json: "application/json", txt: "text/plain",
+    md: "text/markdown",
   }
   return new Response(file, {
     headers: { "Content-Type": mimeTypes[ext || ""] || "application/octet-stream" }
