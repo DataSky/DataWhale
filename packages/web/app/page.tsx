@@ -52,6 +52,7 @@ export default function Home() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeIdRef = useRef<string | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => {
@@ -192,9 +193,10 @@ export default function Home() {
     const userMsg: Msg = { id: "m" + Date.now(), role: "user", content: text, ts: Date.now() }
     const newMsgs = [...messages, userMsg]; setMessages(newMsgs)
     setStreaming(true); setStreamItems([])
+    const ac = new AbortController(); abortControllerRef.current = ac
 
     try {
-      const res = await fetch(API + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, sessionId: activeIdRef.current || undefined, model: selectedModel, files: uploadedFiles.map(function(f) { return f.path }) }) })
+      const res = await fetch(API + "/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, sessionId: activeIdRef.current || undefined, model: selectedModel, files: uploadedFiles.map(function(f) { return f.path }) }), signal: ac.signal })
       if (!res.ok || !res.body) throw new Error("Connection failed")
       const reader = res.body.getReader(); const decoder = new TextDecoder()
       var buf = "", thinking = "", content = ""; var tools: any[] = []; var newSid = activeIdRef.current
@@ -264,12 +266,20 @@ export default function Home() {
         }
       }
       setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now() }])
-      setStreamItems([]); setStreaming(false)
+      setStreamItems([]); setStreaming(false); abortControllerRef.current = null
       if (newSid) setActiveId(newSid); loadSessions()
-    } catch (err: any) { setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now() }]); setStreaming(false) }
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now() }])
+      } else {
+        setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now() }])
+      }
+      setStreamItems([]); setStreaming(false); abortControllerRef.current = null
+    }
   }, [input, streaming, messages, selectedModel, uploadedFiles, loadSessions])
 
   const send = useCallback(function() { _send() }, [_send])
+  const handleStop = useCallback(function() { abortControllerRef.current?.abort() }, [])
   const newSession = function() { setActiveId(null); setMessages([]); try { inputRef.current?.focus() } catch {} }
   const startEdit = function(msg: Msg) { setEditingMsgId(msg.id); setEditText(msg.content) }
   const submitEdit = function() {
@@ -522,10 +532,17 @@ export default function Home() {
               placeholder="Ask about your data..." rows={3}
               className="flex-1 bg-bg-secondary border border-border rounded-xl px-4 py-3 text-sm placeholder:text-text-muted resize-none outline-none focus:border-accent transition-colors min-h-[44px]"
               disabled={streaming} />
-            <button onClick={send} disabled={!input.trim() || streaming}
-              className="px-6 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 transition-all shrink-0 self-end">
-              {streaming ? "…" : "Send"}
-            </button>
+            {streaming ? (
+              <button onClick={handleStop}
+                className="px-6 py-3 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-all shrink-0 self-end">
+                ⏹ Stop
+              </button>
+            ) : (
+              <button onClick={send} disabled={!input.trim()}
+                className="px-6 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 transition-all shrink-0 self-end">
+                Send
+              </button>
+            )}
           </div>
           <p className="text-xs text-text-muted text-center mt-2">Enter to send · Drag files to upload</p>
         </div>

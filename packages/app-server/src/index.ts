@@ -123,9 +123,7 @@ app.post("/api/chat", async (c) => {
 
   // SSE stream
   return streamSSE(c, async (stream) => {
-    const ac = new AbortController()
-
-    stream.onAbort(() => ac.abort())
+    stream.onAbort(() => agent.abort())
 
     agent.subscribe((event: AgentEvent) => {
       // Map agent events to SSE

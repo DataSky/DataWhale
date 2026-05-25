@@ -147,9 +147,16 @@ export class SessionStore {
   async saveMessages(sessionId: string, messages: AgentMessage[]): Promise<void> {
     const db = await this.init()
 
-    // Only save new messages (avoid duplicates by content hash)
+    // Incremental save: only persist messages beyond what's already stored.
+    // This prevents the duplicate-bloat bug where full-state saves on every
+    // turn would re-insert prior messages, exploding the DB row count.
+    const countResult = db.exec(`SELECT COUNT(*) as cnt FROM messages WHERE session_id = '${sessionId}'`)
+    const alreadySaved = (countResult[0]?.values[0]?.[0] as number) || 0
+    const newMessages = messages.slice(alreadySaved)
+    if (newMessages.length === 0) return
+
     const insertStmt = db.prepare(
-      "INSERT OR IGNORE INTO messages (session_id, role, content, thinking, timestamp, meta) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO messages (session_id, role, content, thinking, timestamp, meta) VALUES (?, ?, ?, ?, ?, ?)"
     )
 
     const now = Date.now()
@@ -165,7 +172,7 @@ export class SessionStore {
       }
     }
 
-    for (const msg of messages) {
+    for (const msg of newMessages) {
       // Flatten content array to pure text for consistent display
       const rawContent = typeof msg.content === "string"
         ? msg.content
@@ -214,6 +221,7 @@ export class SessionStore {
     stmt.bind([sessionId])
 
     const messages: AgentMessage[] = []
+    const seen = new Set<string>()
     while (stmt.step()) {
       const row = stmt.getAsObject()
       const role = row.role as string
@@ -239,6 +247,11 @@ export class SessionStore {
       } else {
         messageContent = content
       }
+
+      // Dedup: skip messages already seen (mitigates historical duplicate bloat)
+      const dedupKey = `${role}|${JSON.stringify(messageContent)}|${timestamp}`
+      if (seen.has(dedupKey)) continue
+      seen.add(dedupKey)
 
       messages.push({
         role: role as AgentMessage["role"],
