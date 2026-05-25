@@ -174,7 +174,23 @@ export class SessionStore {
       }
     }
 
+    // Collect artifact data from tool_result → forward to next assistant message
+    const pendingArtifacts: Array<{ id: string; type: string; title: string; html: string }> = []
+
     for (const msg of newMessages) {
+      // Check if this tool_result carries artifact data (from generate_html etc.)
+      if (msg.role === "tool_result" && msg.meta?.details) {
+        const dt = msg.meta.details as Record<string, unknown>
+        if (dt.artifactHtml && dt.artifactId) {
+          pendingArtifacts.push({
+            id: dt.artifactId as string,
+            type: (dt.artifactType as string) || "html",
+            title: (dt.title as string) || "Artifact",
+            html: dt.artifactHtml as string,
+          }) as any
+        }
+      }
+
       // Flatten content: handle tool_result specially (its content is in type="tool_result" parts, not "text")
       let rawContent: string
       if (typeof msg.content === "string") {
@@ -215,6 +231,15 @@ export class SessionStore {
         ...toolCalls.map((tc: any) => ({ ...tc, id: tc.id || `tc_${Date.now()}` }))
       ]
       if (allToolCalls.length > 0) mergedMeta.toolCalls = allToolCalls
+
+      // Attach pending artifacts to this assistant message
+      if (msg.role === "assistant" && pendingArtifacts.length > 0) {
+        mergedMeta.artifacts = pendingArtifacts.map(a => ({
+          id: a.id, type: a.type, title: a.title, html: a.html,
+        }))
+        pendingArtifacts.length = 0
+      }
+
       const meta = Object.keys(mergedMeta).length > 0 ? JSON.stringify(mergedMeta) : null
       const thinking = (msg as any).thinking as string || null
 

@@ -471,6 +471,8 @@ export class Agent {
           } as MessagePart,
         ],
         timestamp: Date.now(),
+        // Preserve tool details (e.g. artifact data) for persistence
+        meta: tr.result.details ? { details: tr.result.details } : undefined,
       }
       this.state = {
         ...this.state,

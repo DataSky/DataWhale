@@ -283,7 +283,14 @@ export default function Home() {
               return { id: tc.id || "", name: tc.name || "unknown", status: "done", preview: full.slice(0, 80), detail: full }
             })
           }
-          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, ts: m.timestamp || 0 })
+          // Restore artifacts from persisted meta
+          var artifacts: ArtifactData[] | undefined
+          if (m.meta && m.meta.artifacts && Array.isArray(m.meta.artifacts)) {
+            artifacts = m.meta.artifacts.map(function(a: any) {
+              return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", streaming: false }
+            })
+          }
+          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, ts: m.timestamp || 0 })
         }
         setMessages(msgs)
       }

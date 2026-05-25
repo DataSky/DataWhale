@@ -524,7 +524,7 @@ const generateHtmlTool: AgentTool = {
 
     return {
       content: `✅ HTML artifact "${title}" generated (${html.length} chars). The user can view, expand, or open it in a separate tab.`,
-      details: { artifactId, title, size: html.length },
+      details: { artifactId, title, artifactType: "html", artifactHtml: html, size: html.length },
     }
   },
 }
