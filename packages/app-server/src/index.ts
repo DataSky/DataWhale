@@ -137,10 +137,9 @@ app.post("/api/chat", async (c) => {
           sessionStore.saveMessages(sessionId, event.state.messages).catch(() => {})
           break
         case "query_end":
-          console.error("[QUERY_END] received, id=" + event.query.id.slice(0, 16))
           data.queryId = event.query.id
           event.query.sessionId = sessionId
-          queryStore.saveQuery(event.query).catch((e: any) => console.error("[query] save failed:", e?.message || e))
+          queryStore.saveQuery(event.query).catch(() => {})
           break
       }
 
