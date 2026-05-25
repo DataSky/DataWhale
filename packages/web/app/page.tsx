@@ -228,7 +228,7 @@ export default function Home() {
                   setStreamItems(items)
                 }
               }
-              else if (ev.type === "agent_end") { if (ev.sessionId) newSid = ev.sessionId }
+              else if (ev.type === "agent_end") { if (ev.sessionId) { newSid = ev.sessionId; activeIdRef.current = ev.sessionId } }
             } catch {}
           }
         }

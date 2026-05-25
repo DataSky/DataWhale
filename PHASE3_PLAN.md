@@ -1,6 +1,6 @@
 # DataWhale 项目进展与行动方案
 
-> 2026-05-24 | v0.3.0 | 实时更新
+> 2026-05-25 | v0.3.0 | 实时更新
 
 ---
 
@@ -65,7 +65,29 @@
 
 ---
 
-## 三、未完成计划
+## 三、进行中：Phase 3.5 — 架构修复（P0）
+
+> **阻断说明**：以下三个问题是 2026-05-25 代码审计中发现的 P0 级架构风险。在新功能开发之前必须先修复，否则新功能会放大现有数据一致性问题。
+
+| # | 问题 | 影响范围 | 估时 | 状态 |
+|---|------|---------|------|------|
+| **P0-1** | 数据库双写覆盖：SessionStore 和 QueryStore 共享 `sessions.db` 但各维护独立 sql.js 实例，`fs.writeFileSync` 全量覆盖导致后写者覆盖先写者 | agent, app-server, cli | 1天 | ❌ |
+| **P0-2** | 新旧模型双轨：SessionStore 用旧 `messages` 表 / QueryStore 用新 `queries` 表，前端仅读旧表，两套数据可能不一致 | 前后端数据 | 1.5天 | ❌ |
+| **P0-3** | 知识提取逻辑重复：CLI（`extractKnowledge` ~95行）和 app-server（SSE 内联 ~33行）各实现一遍，代码重复且行为不一致 | agent, cli, app-server | 0.5天 | ❌ |
+
+**修复顺序**：P0-1 → P0-2 → P0-3（按依赖关系排序）
+
+- **P0-1** 创建统一的 `DBConnectionManager` 单例，确保同一 db 文件只有一个 sql.js 实例
+- **P0-2** 在 P0-1 基础上统一数据模型为新 Query/Span 模型，迁移旧 messages 或废弃旧表，前端接入新模型
+- **P0-3** 在 P0-1/P0-2 稳定后将知识提取逻辑提取为 `@datawhale/agent` 的共享方法
+
+> **合计 P0 修复估时：3 天**
+
+---
+
+## 四、未完成计划
+
+> 以下功能在 P0 修复完成后按优先级执行。
 
 | 功能 | 优先级 | 估时 | 状态 |
 |------|--------|------|------|
@@ -77,29 +99,33 @@
 
 ---
 
-## 四、推荐下一步
+## 五、推荐执行顺序
 
 ```
-1. 可视化 (0.5天)  ██████████  查询结果变表格/图表，体验质变
-2. 知识积累 (3天)   ██████████  核心差异化——越用越聪明
-3. 自扩展 (3天)     ██████      Agent 写 Extension
+1. P0 架构修复 (3天)  ██████████  数据库安全 + 数据模型统一 → 新功能的基石
+2. 可视化 (0.5天)      ██████      查询结果变表格/图表，体验质变
+3. 知识积累 (3天)      ██████████  核心差异化——越用越聪明
+4. 自扩展 (3天)        ██████      Agent 写 Extension
 ```
 
-**可视化优先**：当前所有能力就绪（搜索、Python、数据接入），但结果仍是纯文本。加 ASCII 表格 + sparkline 只需半天，分析结果可读性跃升。
+**架构修复优先**：Phase 3.5 的三个 P0 问题直接威胁数据完整性。在新功能叠加之前修复它们，避免"在裂缝上盖楼"。P0-1（数据库双写覆盖）是最紧迫的——每次 Web 聊天都在触发这个竞争条件。
 
 ---
 
-## 五、当前风险
+## 六、当前风险
 
-| 风险 | 缓解 |
-|------|------|
-| E2B Pause 14天过期 | 自动重建 + S3 兜底方案已记录 |
-| DeepSeek deepseek-chat 7/24 弃用 | ✅ 已迁移到 V4 系列 |
-| Bun Worker 限制 | ✅ 已切换到 sql.js |
+| 风险 | 严重度 | 缓解 |
+|------|--------|------|
+| SessionStore/QueryStore 双写覆盖 | 🔴 P0 | Phase 3.5 P0-1：DBConnectionManager 单例 |
+| 新旧数据模型不一致 | 🔴 P0 | Phase 3.5 P0-2：统一为 Query/Span 模型 |
+| 知识提取逻辑重复 | 🔴 P0 | Phase 3.5 P0-3：提取共享方法 |
+| E2B Pause 14天过期 | 🟡 | 自动重建 + S3 兜底方案已记录 |
+| DuckDB 查询缓存在数据变更后毒化 | 🟡 | load_csv/load_json 后清空缓存 |
+| Bun Worker 限制 | 🟢 | ✅ 已切换到 sql.js |
 
 ---
 
-## 六、文件结构
+## 七、文件结构
 
 ```
 DataWhale/
@@ -108,6 +134,7 @@ DataWhale/
 ├── package.json / tsconfig.json
 ├── README.md                   # 使用文档
 ├── DESIGN_ANALYSIS.md          # 设计分析
+├── PROJECT_ANALYSIS_REPORT.md  # 代码审计报告
 ├── PHASE3_PLAN.md              # 本文档
 ├── docs/
 │   ├── S3_PERSISTENCE.md
@@ -118,12 +145,14 @@ DataWhale/
 │   └── sales.csv
 └── packages/
     ├── ai/src/                 # Provider 抽象
-    ├── agent/src/              # Agent + SessionStore + TraceStore
-    ├── tools/src/builtin/      # duckdb / data-io / external-tools
+    ├── agent/src/              # Agent + SessionStore + TraceStore + QueryStore
+    ├── tools/src/builtin/      # duckdb / data-io / external-tools / self-extend
     ├── extensions/src/         # Extension 系统
+    ├── app-server/src/         # Web 服务端 (Hono + SSE)
+    ├── web/app/                # Next.js 前端
     └── cli/src/ / test/        # CLI + 测试
 ```
 
 ---
 
-*最后更新: 2026-05-24 16:45 CST*
+*最后更新: 2026-05-25 12:00 CST*

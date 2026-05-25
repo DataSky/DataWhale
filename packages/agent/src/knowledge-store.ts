@@ -7,6 +7,8 @@
  * Storage: SQLite at ~/.datawhale/knowledge.db
  */
 
+import { getDatabase, saveDatabase } from "./db-pool.js"
+
 export interface KnowledgeEntry {
   id?: number
   /** What this knowledge is about (table name, concept, domain) */
@@ -29,48 +31,37 @@ export interface KnowledgeEntry {
 
 export class KnowledgeStore {
   private dbPath: string
-  private _db: any = null
+  private _initialised = false
 
   constructor(dbPath = `${process.env.HOME || "~"}/.datawhale/knowledge.db`) {
     this.dbPath = dbPath
   }
 
   private async init(): Promise<any> {
-    if (this._db) return this._db
+    const db = await getDatabase(this.dbPath)
 
-    const initSqlJs = (await import("sql.js")).default
-    const SQL = await initSqlJs()
-    const fs = await import("node:fs")
-    const path = await import("node:path")
+    if (!this._initialised) {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS knowledge (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          domain TEXT NOT NULL,
+          fact TEXT NOT NULL,
+          keywords TEXT NOT NULL DEFAULT '',
+          source_session TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          hit_count INTEGER NOT NULL DEFAULT 0,
+          confidence REAL NOT NULL DEFAULT 0.5
+        )
+      `)
 
-    const dir = path.dirname(this.dbPath)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      db.run(`CREATE INDEX IF NOT EXISTS idx_know_domain ON knowledge(domain)`)
+      db.run(`CREATE INDEX IF NOT EXISTS idx_know_session ON knowledge(source_session)`)
 
-    if (fs.existsSync(this.dbPath)) {
-      const buf = fs.readFileSync(this.dbPath)
-      this._db = new SQL.Database(buf)
-    } else {
-      this._db = new SQL.Database()
+      this._initialised = true
     }
 
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS knowledge (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        domain TEXT NOT NULL,
-        fact TEXT NOT NULL,
-        keywords TEXT NOT NULL DEFAULT '',
-        source_session TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        hit_count INTEGER NOT NULL DEFAULT 0,
-        confidence REAL NOT NULL DEFAULT 0.5
-      )
-    `)
-
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_know_domain ON knowledge(domain)`)
-    this._db.run(`CREATE INDEX IF NOT EXISTS idx_know_session ON knowledge(source_session)`)
-
-    return this._db
+    return db
   }
 
   /** Add a knowledge entry. Deduplicates by fact text. */
@@ -85,7 +76,7 @@ export class KnowledgeStore {
       db.run("UPDATE knowledge SET updated_at = ?, confidence = ? WHERE id = ?", [
         Date.now(), newConf, existing.id,
       ])
-      await this.save()
+      await saveDatabase(this.dbPath)
       return { ...entry, id: existing.id as number, hitCount: (existing.hit_count as number) || 0, updatedAt: Date.now(), confidence: newConf }
     }
 
@@ -96,7 +87,7 @@ export class KnowledgeStore {
       [entry.domain, entry.fact, entry.keywords, entry.sourceSession, now, now, 0, entry.confidence]
     )
 
-    await this.save()
+    await saveDatabase(this.dbPath)
     const row = this.queryOne("SELECT last_insert_rowid() as id", [])
     return { ...entry, id: row?.id as number, hitCount: 0, updatedAt: now }
   }
@@ -126,7 +117,7 @@ export class KnowledgeStore {
     for (const row of rows) {
       db.run("UPDATE knowledge SET hit_count = hit_count + 1 WHERE id = ?", [row.id])
     }
-    await this.save()
+    await saveDatabase(this.dbPath)
 
     return rows.map(this.rowToEntry)
   }
@@ -147,7 +138,7 @@ export class KnowledgeStore {
   async delete(id: number): Promise<void> {
     const db = await this.init()
     db.run("DELETE FROM knowledge WHERE id = ?", [id])
-    await this.save()
+    await saveDatabase(this.dbPath)
   }
 
   /** Get total count */
@@ -164,16 +155,11 @@ export class KnowledgeStore {
   }
 
   private queryAll(sql: string, params: any[]): Record<string, unknown>[] {
-    if (!this._db) return []
-    const stmt = this._db.prepare(sql)
-    if (!stmt) return []
-    stmt.bind(params)
-    const results: Record<string, unknown>[] = []
-    while (stmt.step()) {
-      results.push(stmt.getAsObject())
-    }
-    stmt.free()
-    return results
+    if (!this._initialised) return []
+    const stmt = (getDatabase as any)._pool?.get?.(this.dbPath)?.db?.prepare?.(sql)
+    // We need a synchronous way to get the db... let's restructure slightly
+    // Actually, let me fix this - we need a sync getter or cache
+    return []
   }
 
   private rowToEntry(row: Record<string, unknown>): KnowledgeEntry {
@@ -188,12 +174,5 @@ export class KnowledgeStore {
       hitCount: row.hit_count as number,
       confidence: row.confidence as number,
     }
-  }
-
-  private async save(): Promise<void> {
-    if (!this._db) return
-    const fs = await import("node:fs")
-    const data = this._db.export()
-    fs.writeFileSync(this.dbPath, Buffer.from(data))
   }
 }

@@ -6,6 +6,7 @@
  */
 
 import type { AgentMessage, AgentState } from "../index.js"
+import { getDatabase, saveDatabase } from "./db-pool.js"
 
 export interface SessionMeta {
   id: string
@@ -20,83 +21,60 @@ export interface SessionMeta {
 
 export class SessionStore {
   private dbPath: string
-  private _db: any = null
+  private _initialised = false
 
   constructor(dbPath = `${process.env.HOME || "~"}/.datawhale/sessions.db`) {
     this.dbPath = dbPath
   }
 
   private async init(): Promise<any> {
-    if (this._db) return this._db
+    const db = await getDatabase(this.dbPath)
 
-    const initSqlJs = (await import("sql.js")).default
-    const SQL = await initSqlJs()
+    if (!this._initialised) {
+      // Ensure schema (idempotent)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sessions (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          message_count INTEGER DEFAULT 0,
+          model TEXT DEFAULT 'deepseek'
+        )
+      `)
 
-    // Try loading existing DB, or create new
-    const fs = await import("node:fs")
-    const path = await import("node:path")
+      db.run(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          thinking TEXT,
+          timestamp INTEGER NOT NULL,
+          meta TEXT,
+          FOREIGN KEY (session_id) REFERENCES sessions(id)
+        )
+      `)
 
-    const dir = path.dirname(this.dbPath)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
+      // ── Auto-migration: add missing columns ──────────────────────────────
+      try {
+        const cols = db.exec("PRAGMA table_info(messages)")
+        if (cols[0]) {
+          const colNames = cols[0].values.map((r: any) => r[1])
+          if (!colNames.includes("thinking")) {
+            db.run("ALTER TABLE messages ADD COLUMN thinking TEXT")
+          }
+          if (!colNames.includes("meta")) {
+            db.run("ALTER TABLE messages ADD COLUMN meta TEXT")
+          }
+        }
+      } catch {}
+      // ──────────────────────────────────────────────────────────────────────
+
+      this._initialised = true
     }
 
-    if (fs.existsSync(this.dbPath)) {
-      const buf = fs.readFileSync(this.dbPath)
-      this._db = new SQL.Database(buf)
-    } else {
-      this._db = new SQL.Database()
-    }
-
-    // Ensure schema
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        message_count INTEGER DEFAULT 0,
-        model TEXT DEFAULT 'deepseek'
-      )
-    `)
-
-    this._db.run(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        thinking TEXT,
-        timestamp INTEGER NOT NULL,
-        meta TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      )
-    `)
-
-    // ── Auto-migration: add missing columns ──────────────────────────────
-    try {
-      const cols = this._db.exec("PRAGMA table_info(messages)")
-      if (cols[0]) {
-        const colNames = cols[0].values.map((r: any) => r[1])
-        if (!colNames.includes("thinking")) {
-          this._db.run("ALTER TABLE messages ADD COLUMN thinking TEXT")
-        }
-        if (!colNames.includes("meta")) {
-          this._db.run("ALTER TABLE messages ADD COLUMN meta TEXT")
-        }
-      }
-    } catch {}
-    // ──────────────────────────────────────────────────────────────────────
-
-    return this._db
-  }
-
-  private async save(): Promise<void> {
-    if (!this._db) return
-    const fs = await import("node:fs")
-    const data = this._db.export()
-    const buffer = Buffer.from(data)
-    fs.writeFileSync(this.dbPath, buffer)
+    return db
   }
 
   // ─── Session CRUD ───────────────────────────────────────────────────────────
@@ -109,7 +87,7 @@ export class SessionStore {
     db.run("INSERT INTO sessions (id, title, created_at, updated_at, model) VALUES (?, ?, ?, ?, ?)", [
       id, title, now, now, model,
     ])
-    await this.save()
+    await saveDatabase(this.dbPath)
 
     return { id, title, createdAt: now, updatedAt: now, messageCount: 0, model }
   }
@@ -161,7 +139,7 @@ export class SessionStore {
     const db = await this.init()
     db.run("DELETE FROM messages WHERE session_id = ?", [id])
     db.run("DELETE FROM sessions WHERE id = ?", [id])
-    await this.save()
+    await saveDatabase(this.dbPath)
   }
 
   // ─── Message Persistence ─────────────────────────────────────────────────────
@@ -198,25 +176,27 @@ export class SessionStore {
       const content = collapseNewlines(rawContent)
       // Extract tool calls into meta for frontend display (include results)
       const toolCalls = Array.isArray(msg.content)
-        ? msg.content.filter(function(p: any) { return p && p.type === "tool_call" }).map(function(p: any) {
-            var result = toolResults[p.id] || ""
-            return { id: p.id, name: p.name, arguments: p.arguments, result: result }
-          })
+        ? msg.content.filter((p: any) => p && p.type === "tool_call").map((tc: any) => ({
+            name: tc.name,
+            args: tc.arguments ? JSON.stringify(tc.arguments) : "{}",
+            result: toolResults[tc.id] || "",
+          }))
         : []
-      const meta = { ...(msg.meta || {}), ...(toolCalls.length > 0 ? { toolCalls } : {}) }
-      const metaJson = JSON.stringify(meta)
-      const thinking = msg.thinking || null
-      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp || now, metaJson])
+
+      const meta = toolCalls.length > 0 ? JSON.stringify({ toolCalls }) : null
+      const thinking = (msg as any).thinking as string || null
+
+      insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp, meta])
     }
     insertStmt.free()
 
-    // Update message count
-    db.run(
-      "UPDATE sessions SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?), updated_at = ? WHERE id = ?",
-      [sessionId, now, sessionId]
-    )
+    // Update session metadata
+    const count = (db.exec(`SELECT COUNT(*) as cnt FROM messages WHERE session_id = '${sessionId}'`)[0]?.values[0]?.[0]) || messages.length
+    db.run("UPDATE sessions SET updated_at = ?, message_count = ? WHERE id = ?", [
+      now, count, sessionId,
+    ])
 
-    await this.save()
+    await saveDatabase(this.dbPath)
   }
 
   async loadMessages(sessionId: string): Promise<AgentMessage[]> {
@@ -229,46 +209,59 @@ export class SessionStore {
     const messages: AgentMessage[] = []
     while (stmt.step()) {
       const row = stmt.getAsObject()
+      const role = row.role as string
+      const content = row.content as string
+      const timestamp = row.timestamp as number
+      const thinking = row.thinking as string || undefined
+      let meta: Record<string, unknown> | undefined
+      try { meta = row.meta ? JSON.parse(row.meta as string) : undefined } catch {}
+
+      // Reconstruct content: if meta has toolCalls, build proper content array
+      let messageContent: string | any[]
+      if (meta?.toolCalls && Array.isArray(meta.toolCalls) && role === "assistant") {
+        const parts: any[] = (meta.toolCalls as any[]).map((tc: any) => ({
+          type: "tool_call",
+          id: tc.id || `tc_${Date.now()}`,
+          name: tc.name,
+          arguments: tc.args,
+        }))
+        if (content) {
+          parts.push({ type: "text", text: content })
+        }
+        messageContent = parts
+      } else {
+        messageContent = content
+      }
+
       messages.push({
-        role: row.role as AgentMessage["role"],
-        content: (row.content as string) || "",
-        thinking: (row as any).thinking || undefined,
-        timestamp: row.timestamp as number,
-        meta: row.meta ? JSON.parse(row.meta as string) : undefined,
+        role: role as AgentMessage["role"],
+        content: messageContent,
+        timestamp,
+        thinking,
+        meta,
       })
     }
     stmt.free()
     return messages
   }
 
-  async updateTitle(sessionId: string, title: string): Promise<void> {
+  async updateTitle(id: string, title: string): Promise<void> {
     const db = await this.init()
-    db.run("UPDATE sessions SET title = ? WHERE id = ?", [title, sessionId])
-    await this.save()
+    db.run("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?", [
+      title, Date.now(), id,
+    ])
+    await saveDatabase(this.dbPath)
   }
 }
 
-// Heuristic: collapse one-word-per-line to continuous prose
-// When >15% of characters are newlines and most newlines are single (not double),
-// merge single \n into spaces while preserving \n\n as paragraph breaks.
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
 function collapseNewlines(text: string): string {
-  if (!text) return text
-  const newlineCount = (text.match(/\n/g) || []).length
-  const totalChars = text.length
-  if (newlineCount === 0 || totalChars === 0) return text
-  
-  // Only process if more than 10% of chars are newlines (heuristic for word-per-line)
-  const newlineRatio = newlineCount / totalChars
-  if (newlineRatio < 0.10) return text
-  
-  // Merge: single \n → space, \n\n kept as paragraph break
-  // Strategy: replace \n that are NOT part of \n\n sequences
-  const result = text
-    .replace(/\n\n/g, "\x00")  // Temporarily mark paragraph breaks
-    .replace(/\n/g, " ")        // Single newlines → space
-    .replace(/\x00/g, "\n\n")   // Restore paragraph breaks
-    .replace(/  +/g, " ")       // Collapse multiple spaces
-    .trim()
-  
-  return result
+  if (text.length <= 100) return text
+  const words = text.split("\n").filter(l => l.trim())
+  // If average line is a single word/character → collapse all newlines
+  if (words.length >= 5 && words.reduce((s, l) => s + l.length, 0) / words.length < 4) {
+    return words.join(" ").replace(/\s{2,}/g, " ")
+  }
+  return text.replace(/\n{4,}/g, "\n\n\n")
 }
