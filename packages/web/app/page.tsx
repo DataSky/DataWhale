@@ -222,6 +222,8 @@ export default function Home() {
             var line = lines[li]; if (!line.startsWith("data: ")) continue
             try {
               var ev = JSON.parse(line.slice(6))
+              // Update sessionId from ANY event that carries it
+              if (ev.sessionId && !newSid) { newSid = ev.sessionId; activeIdRef.current = ev.sessionId }
               if (ev.type === "message_update") {
                 content += ev.delta
                 if (items.length > 0 && items[items.length - 1].type === "text") {

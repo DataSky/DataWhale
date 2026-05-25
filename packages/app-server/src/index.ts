@@ -159,6 +159,7 @@ app.post("/api/chat", async (c) => {
     try {
       await agent.prompt(prompt)
     } catch (err: any) {
+      console.error("[PROMPT ERROR]", err.message)
       stream.writeSSE({
         data: JSON.stringify({ type: "error", message: err.message }),
       })
