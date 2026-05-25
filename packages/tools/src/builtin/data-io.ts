@@ -393,6 +393,35 @@ const summarizeTableTool: AgentTool = {
             const maxV = stats.max_val != null ? Number(stats.max_val).toFixed(2) : "N/A"
             const avgV = stats.avg_val != null ? Number(stats.avg_val).toFixed(2) : "N/A"
             output += `  min: ${minV}  |  max: ${maxV}  |  avg: ${avgV}\n`
+
+            // ASCII distribution histogram (10 bins)
+            if (total > 0 && nullCount < total) {
+              try {
+                const sampleSQL = total > 500
+                  ? `SELECT CAST("${name}" AS REAL) as v FROM "${tableName.replace(/"/g, '""')}" WHERE "${name}" IS NOT NULL ORDER BY RANDOM() LIMIT 500`
+                  : `SELECT CAST("${name}" AS REAL) as v FROM "${tableName.replace(/"/g, '""')}" WHERE "${name}" IS NOT NULL`
+                const vals: number[] = []
+                const valStmt = db.prepare(sampleSQL)
+                while (valStmt.step()) vals.push(valStmt.getAsObject().v as number)
+                valStmt.free()
+                if (vals.length > 0) {
+                  const lo = Math.min(...vals)
+                  const hi = Math.max(...vals)
+                  const range = hi - lo || 1
+                  const bins = new Array(10).fill(0)
+                  for (const v of vals) {
+                    const idx = Math.min(Math.floor((v - lo) / range * 10), 9)
+                    bins[idx]++
+                  }
+                  const maxBin = Math.max(...bins, 1)
+                  const chars = "▁▂▃▄▅▆▇█"
+                  const spark = bins.map(n => chars[Math.min(Math.floor((n / maxBin) * (chars.length - 1)), chars.length - 1)]).join("")
+                  output += `  dist: ${spark} (10-bin)\n`
+                }
+              } catch {
+                // Histogram is non-blocking
+              }
+            }
           }
           statsStmt.free()
         } catch {

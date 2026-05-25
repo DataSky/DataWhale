@@ -337,6 +337,22 @@ const executePythonTool: AgentTool = {
       }
     }
 
+    // Sandbox workspace file index
+    try {
+      const sandbox = await getSandbox()
+      const lsResult = await sandbox.runCode(
+        "import os; [print(f'{f} ({os.path.getsize(os.path.join(\"/tmp\",f))} bytes)') for f in sorted(os.listdir('/tmp')) if os.path.isfile(os.path.join('/tmp',f)) and not f.startswith('systemd') and not f.startswith('.')]",
+        { timeoutMs: 5000 }
+      )
+      const stdout = ((lsResult.logs?.stdout || []) as string[]).join("").trim()
+      if (stdout) {
+        const lines = stdout.split("\n").filter(Boolean)
+        output += `\n📁 Sandbox workspace files (${lines.length}):\n`
+        for (const line of lines.slice(0, 10)) output += `  → /tmp/${line}\n`
+        if (lines.length > 10) output += `  ... and ${lines.length - 10} more\n`
+      }
+    } catch {}
+
     return { content: output, details }
   },
 }
@@ -447,12 +463,53 @@ const mountOSSTool: AgentTool = {
   },
 }
 
+// ─── List Workspace Files ───────────────────────────────────────────────────
+
+const listWorkspaceFilesTool: AgentTool = {
+  name: "list_workspace_files",
+  description:
+    "List files in the sandbox workspace (/tmp). Use to discover CSV/JSON/images from previous execute_python runs. Avoids redundant SQL queries — if full data is saved to sandbox, analyze it directly with execute_python instead of re-running queries.",
+  parameters: {
+    type: "object",
+    properties: {
+      pattern: {
+        type: "string",
+        description: "Optional filename filter, e.g. '.csv' for only CSV files",
+      },
+    },
+    required: [],
+  },
+  executionMode: "sequential",
+  execute: async (_id, params) => {
+    const pattern = (params.pattern as string) || ""
+    try {
+      const sb = await getSandbox()
+      const code = pattern
+        ? "import os; [print(f + ' (' + str(os.path.getsize('/tmp/'+f)) + ' bytes)') for f in sorted(os.listdir('/tmp')) if os.path.isfile('/tmp/'+f) and '" + pattern + "' in f.lower() and not f.startswith('systemd') and not f.startswith('.')]"
+        : "import os; [print(f + ' (' + str(os.path.getsize('/tmp/'+f)) + ' bytes)') for f in sorted(os.listdir('/tmp')) if os.path.isfile('/tmp/'+f) and not f.startswith('systemd') and not f.startswith('.')]"
+      const lsResult = await sb.runCode(code, { timeoutMs: 5000 })
+      const stdout = ((lsResult.logs?.stdout || []) as string[]).join("").trim()
+      if (!stdout || stdout === "[]") return { content: "No files found in sandbox workspace (/tmp)." }
+      const lines = stdout.split("\n").filter(Boolean)
+      let output = `${pattern ? "Matching" : "Sandbox workspace"} files (${lines.length}):\n`
+      for (const line of lines.slice(0, 20)) output += `  → /tmp/${line}\n`
+      if (lines.length > 20) output += `  ... and ${lines.length - 20} more\n`
+      output += `\nAccess with execute_python: pd.read_csv('/tmp/filename.csv')`
+      return { content: output }
+    } catch (e: any) {
+      return { content: `Failed to list sandbox files: ${e?.message || e}` }
+    }
+  },
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export const ExternalTools = {
   all: [webSearchTool, executePythonTool, sandboxDownloadTool, mountOSSTool] as AgentTool[],
   webSearch: webSearchTool,
   executePython: executePythonTool,
+  listWorkspaceFiles: listWorkspaceFilesTool,
+  sandboxDownload: sandboxDownloadTool,
   closeSandbox,
   pauseSandbox,
 }

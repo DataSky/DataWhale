@@ -240,7 +240,9 @@ const queryTool: AgentTool = {
     // Truncate long outputs to avoid context explosion
     const maxLen = 6000
     if (output.length > maxLen) {
-      output = output.slice(0, maxLen) + `\n... (truncated, ${output.length} chars total, ${rows.length} rows)`
+      const cutPoint = output.lastIndexOf("\n", maxLen)
+      const truncated = cutPoint > 0 ? output.slice(0, cutPoint) : output.slice(0, maxLen)
+      output = truncated + `\n... [不完整: ${rows.length}行中仅展示前 ${displayRows.length} 行]`
     }
 
     queryCache.set(key, { result: output, timestamp: Date.now() })
