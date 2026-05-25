@@ -183,7 +183,14 @@ export class SessionStore {
           }))
         : []
 
-      const meta = toolCalls.length > 0 ? JSON.stringify({ toolCalls }) : null
+      // Merge original meta with extracted toolCalls (preserve Agent-provided meta)
+      const mergedMeta: Record<string, unknown> = { ...(msg.meta || {}) }
+      const allToolCalls = [
+        ...((msg.meta?.toolCalls as any[]) || []),
+        ...toolCalls.map((tc: any) => ({ ...tc, id: tc.id || `tc_${Date.now()}` }))
+      ]
+      if (allToolCalls.length > 0) mergedMeta.toolCalls = allToolCalls
+      const meta = Object.keys(mergedMeta).length > 0 ? JSON.stringify(mergedMeta) : null
       const thinking = (msg as any).thinking as string || null
 
       insertStmt.run([sessionId, msg.role, content, thinking, msg.timestamp, meta])
