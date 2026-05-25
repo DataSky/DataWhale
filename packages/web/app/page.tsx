@@ -111,16 +111,25 @@ const PHASE_LABELS: Record<AgentPhase, string> = {
 function AgentStatusBar({ phase, spinnerFrame, elapsed, turnCount, toolCount, streaming }: {
   phase: AgentPhase; spinnerFrame: number; elapsed: number; turnCount: number; toolCount: number; streaming: boolean
 }) {
-  if (!streaming) return null
   const spinner = SPINNER_FRAMES[spinnerFrame]
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-bg-secondary/80 border border-border rounded-xl text-xs text-text-muted">
-      <span className="text-accent font-mono">{spinner}</span>
-      <span className="text-text-secondary font-medium">{PHASE_LABELS[phase]}</span>
-      <span className="text-text-muted/60">·</span>
-      <span>{elapsed.toFixed(1)}s</span>
-      {turnCount > 0 && <><span className="text-text-muted/60">·</span><span>Turn {turnCount}</span></>}
-      {toolCount > 0 && <><span className="text-text-muted/60">·</span><span>{toolCount} tool{toolCount>1?'s':''}</span></>}
+    <div className="flex items-center gap-3 text-xs h-5">
+      {streaming ? (
+        <>
+          <span className="text-accent font-mono w-4 text-center">{spinner}</span>
+          <span className="text-text-secondary font-medium">{PHASE_LABELS[phase]}</span>
+          <span className="text-text-muted/50">·</span>
+          <span className="text-text-muted tabular-nums">{elapsed.toFixed(1)}s</span>
+          {turnCount > 0 && <><span className="text-text-muted/50">·</span><span className="text-text-muted">Turn {turnCount}</span></>}
+          {toolCount > 0 && <><span className="text-text-muted/50">·</span><span className="text-text-muted">{toolCount} tool{toolCount>1?'s':''}</span></>}
+        </>
+      ) : (
+        <>
+          <span className="text-text-muted/40 font-mono w-4 text-center">✓</span>
+          <span className="text-text-muted/60">Ready</span>
+          {turnCount > 0 && <><span className="text-text-muted/50">·</span><span className="text-text-muted/60">last: Turn {turnCount} in {elapsed.toFixed(1)}s</span></>}
+        </>
+      )}
     </div>
   )
 }
@@ -689,10 +698,6 @@ export default function Home() {
           {/* Streaming */}
           {streaming ? (
             <div className="msg-enter flex justify-start"><div className="max-w-[85%] min-w-0 space-y-1.5">
-              {/* Agent pulse — always visible while streaming */}
-              <AgentStatusBar phase={agentPhase} spinnerFrame={spinnerFrame} elapsed={elapsed}
-                turnCount={turnCount} toolCount={streamItems.filter(function(it) { return it.type === "tool" && it.toolStatus === "running" }).length + streamItems.filter(function(it) { return it.type === "tool" && it.toolStatus === "done" }).length}
-                streaming={streaming} />
               {streamItems.length === 0 ? (
                 <div className="flex gap-1.5 py-2"><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} /></div>
               ) : null}
@@ -743,6 +748,14 @@ export default function Home() {
               {streamItems.length > 0 && streamItems[streamItems.length - 1].type === "text" ? <span className="typing-cursor" /> : null}
             </div></div>
           ) : null}
+        </div>
+
+        {/* Agent Status Bar — fixed above input, never scrolls away */}
+        <div className="border-t border-border px-4 py-1.5 bg-bg-secondary/90">
+          <AgentStatusBar phase={agentPhase} spinnerFrame={spinnerFrame} elapsed={elapsed}
+            turnCount={turnCount}
+            toolCount={streamItems.filter(function(it) { return it.type === "tool" }).length}
+            streaming={streaming} />
         </div>
 
         {/* Input */}
