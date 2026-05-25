@@ -756,7 +756,7 @@ export default function Home() {
                   )
                 }
                 if (item.type === "artifact") {
-                  var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, streaming: item.artifactStreaming || false }
+                  var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, fileUrl: item.artifactFileUrl, streaming: item.artifactStreaming || false }
                   return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
                 }
                 if (item.type === "tool") {
