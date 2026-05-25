@@ -100,6 +100,16 @@ app.post("/api/chat", async (c) => {
     maxTokens: 4096,
   })
 
+  // Inject conversation history so multi-turn works
+  if (sessionId) {
+    try {
+      const history = await sessionStore.loadMessages(sessionId)
+      if (history && history.length > 0) {
+        agent.state.messages = history.slice()
+      }
+    } catch {}
+  }
+
   // SSE stream
   return streamSSE(c, async (stream) => {
     const ac = new AbortController()
