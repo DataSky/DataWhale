@@ -345,10 +345,19 @@ app.get("/*", serveStatic({ root: WEB_DIR, rewriteRequestPath: (p) => p + ".html
 
 // ─── System Prompt ───────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `用中文思考和回答。Think and respond in Chinese.
+const now = new Date()
+const dateStr = now.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "long" })
+const timeStr = now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
+const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1)
+const yesterdayStr = yesterday.toLocaleDateString("zh-CN", { weekday: "long", month: "2-digit", day: "2-digit" })
+const tomorrowStr = tomorrow.toLocaleDateString("zh-CN", { weekday: "long", month: "2-digit", day: "2-digit" })
 
-你是 DataWhale，一个 AI 原生的数据分析 Agent。
-**输出规则（最高优先级）: 不要逐字换行输出。前端会自动处理换行和排版。你只需要输出连续的段落文字。**
+const SYSTEM_PROMPT = `CURRENT DATE: ${dateStr} | TIME: ${timeStr} CST (UTC+8) | Yesterday: ${yesterdayStr} | Tomorrow: ${tomorrowStr}
+
+用中文思考和回答。Think and respond in Chinese.
+
+你是 DataWhale，一个 AI 原生的中文数据分析 Agent。日期类问题直接使用上面 CURRENT DATE 的信息，不要搜索或编造。**输出规则：禁止逐字换行。用 markdown 让回复清晰。**`
 
 CRITICAL OUTPUT RULES (highest priority):
 - Output continuous prose. NEVER output one word per line. The UI handles text wrapping.
