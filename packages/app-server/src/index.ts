@@ -71,8 +71,19 @@ app.post("/api/chat", async (c) => {
   let knowledgeContext = ""
   try {
     const relevant = await knowledgeStore.search(prompt, 3)
-    if (relevant.length > 0) {
-      knowledgeContext = `\n\n📚 Prior Knowledge:\n${relevant.map((k, i) => `${i + 1}. [${k.domain}] ${k.fact}`).join("\n")}\n\n`
+    if (relevant && relevant.length > 0) {
+      // Schema entries first (authoritative), then general knowledge
+      const schemas = relevant.filter(k => k.domain?.startsWith("schema"))
+      const general = relevant.filter(k => !k.domain?.startsWith("schema"))
+      let ctx = "\n\n📚 Prior Knowledge:"
+      if (schemas.length > 0) {
+        ctx += "\n[Schema — 这些是已确认的数据结构，查询时必须使用正确的列名]:"
+        for (const k of schemas) ctx += `\n  • ${k.fact}`
+      }
+      if (general.length > 0) {
+        for (const k of general) ctx += `\n  • [${k.domain}] ${k.fact}`
+      }
+      knowledgeContext = ctx + "\n\n"
     }
   } catch {}
 
@@ -138,6 +149,25 @@ app.post("/api/chat", async (c) => {
           data.content = event.result.isError
             ? event.result.errorMessage
             : event.result.result.content || ""
+
+          // Schema Registry: auto-capture table schemas from describe_table
+          if (!event.result.isError && event.result.toolName === "describe_table") {
+            const content = event.result.result.content
+            const tableMatch = content.match(/Table: (\w+)/)
+            if (tableMatch) {
+              const tableName = tableMatch[1]
+              const colMatches = content.match(/  - (\w+):/g)
+              if (colMatches) {
+                const cols = colMatches.map((c: string) => c.replace(/  - /, "").replace(/:$/, ""))
+                knowledgeStore.add({
+                  domain: `schema:${tableName}`,
+                  fact: `${tableName} has columns: ${cols.join(", ")}`,
+                  keywords: `${tableName},schema,columns,${cols.join(",")}`,
+                  sourceSession: sessionId, createdAt: Date.now(), confidence: 0.9,
+                }).catch(() => {})
+              }
+            }
+          }
           break
         case "agent_end":
           data.status = event.state.status
