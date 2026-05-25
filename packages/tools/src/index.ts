@@ -68,8 +68,8 @@ export function defineTool(config: ToolBuilderConfig): AgentTool {
 
 import { DuckDBTools } from "./builtin/duckdb.js"
 import { DataIOTools } from "./builtin/data-io.js"
-import { ExternalTools, setSessionContext } from "./builtin/external-tools.js"
+import { ExternalTools, setSessionContext, setArtifactEmitter } from "./builtin/external-tools.js"
 import { SelfExtendTools } from "./builtin/self-extend.js"
 
-export { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext }
+export { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext, setArtifactEmitter }
 export type { AgentTool }

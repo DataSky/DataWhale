@@ -16,6 +16,22 @@ export function setSessionContext(sessionId: string): void {
   _sessionId = sessionId
 }
 
+// ─── Artifact emitter (set by app-server so tools can emit artifact events) ──
+
+type ArtifactEmitter = (event: {
+  type: string
+  artifactId: string
+  artifactType?: string
+  title?: string
+  delta?: string
+}) => void
+
+let _emitArtifact: ArtifactEmitter | null = null
+
+export function setArtifactEmitter(emitter: ArtifactEmitter): void {
+  _emitArtifact = emitter
+}
+
 // ─── Tavily Web Search ────────────────────────────────────────────────────────
 
 const webSearchTool: AgentTool = {
@@ -464,6 +480,55 @@ const readLocalFileTool: AgentTool = {
   },
 }
 
+// ─── Generate HTML Artifact Tool ─────────────────────────────────────────────
+
+const generateHtmlTool: AgentTool = {
+  name: "generate_html",
+  description:
+    "Generate an interactive HTML artifact and stream it to the frontend. " +
+    "The HTML will appear as an embedded card in the conversation that the user " +
+    "can expand to fullscreen or open in a separate tab. " +
+    "Use this for dashboards, interactive charts (ECharts/Plotly), data tables, " +
+    "or any rich content that goes beyond plain markdown. " +
+    "Include complete <style> and <script> tags — the HTML runs in a sandboxed iframe. " +
+    "For charts, prefer using ECharts (CDN: https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js).",
+  parameters: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description: "Short title for the artifact card (e.g., 'Sales Dashboard')",
+      },
+      html: {
+        type: "string",
+        description: "Complete HTML content (with <style> and <script> tags). Must be self-contained.",
+      },
+    },
+    required: ["title", "html"],
+  },
+  executionMode: "sequential",
+  execute: async (_id, params) => {
+    const title = params.title as string
+    const html = params.html as string
+    const artifactId = `art_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+
+    if (_emitArtifact) {
+      _emitArtifact({ type: "artifact_start", artifactId, artifactType: "html", title })
+      // Stream in chunks so the frontend can show progressive loading
+      const chunkSize = 4096
+      for (let i = 0; i < html.length; i += chunkSize) {
+        _emitArtifact({ type: "artifact_delta", artifactId, delta: html.slice(i, i + chunkSize) })
+      }
+      _emitArtifact({ type: "artifact_end", artifactId })
+    }
+
+    return {
+      content: `✅ HTML artifact "${title}" generated (${html.length} chars). The user can view, expand, or open it in a separate tab.`,
+      details: { artifactId, title, size: html.length },
+    }
+  },
+}
+
 // ─── OSS Mount (Aliyun / S3-compatible) ────────────────────────────────────
 
 async function mountOSSInit(sandbox: any): Promise<void> {
@@ -570,7 +635,7 @@ const listWorkspaceFilesTool: AgentTool = {
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export const ExternalTools = {
-  all: [webSearchTool, executePythonTool, sandboxDownloadTool, readLocalFileTool, mountOSSTool] as AgentTool[],
+  all: [webSearchTool, executePythonTool, sandboxDownloadTool, readLocalFileTool, generateHtmlTool, mountOSSTool] as AgentTool[],
   webSearch: webSearchTool,
   executePython: executePythonTool,
   listWorkspaceFiles: listWorkspaceFilesTool,

@@ -14,7 +14,7 @@ import { streamSSE } from "hono/streaming"
 import type { AgentEvent } from "@datawhale/agent"
 import { Agent, SessionStore, TraceStore, KnowledgeStore, SkillStore, QueryStore, makeQuery } from "@datawhale/agent"
 import { OpenAICompatibleProvider, registerProvider } from "@datawhale/ai"
-import { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext } from "@datawhale/tools"
+import { DuckDBTools, DataIOTools, ExternalTools, SelfExtendTools, setSessionContext, setArtifactEmitter } from "@datawhale/tools"
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +111,11 @@ app.post("/api/chat", async (c) => {
     maxTokens: 4096,
   })
 
+  // Wire artifact emitter — tools emit artifact events that the SSE loop forwards
+  setArtifactEmitter((event) => {
+    agent.emit(event as AgentEvent)
+  })
+
   // Inject conversation history so multi-turn works
   if (sessionId) {
     try {
@@ -184,6 +189,18 @@ app.post("/api/chat", async (c) => {
           data.queryId = event.query.id
           event.query.sessionId = sessionId
           queryStore.saveQuery(event.query).catch(() => {})
+          break
+        case "artifact_start":
+          data.artifactId = event.artifactId
+          data.artifactType = event.artifactType
+          if (event.title) data.title = event.title
+          break
+        case "artifact_delta":
+          data.artifactId = event.artifactId
+          data.delta = event.delta
+          break
+        case "artifact_end":
+          data.artifactId = event.artifactId
           break
       }
 

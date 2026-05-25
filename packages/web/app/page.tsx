@@ -37,6 +37,68 @@ function MarkdownView({ content }: { content: string }) {
   return <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
+// ── Artifact Components ──────────────────────────────────────────────────────
+
+interface ArtifactData {
+  id: string
+  type: string
+  title?: string
+  content: string
+  streaming: boolean
+}
+
+function HtmlView({ html }: { html: string }) {
+  return (
+    <iframe
+      srcDoc={html}
+      sandbox="allow-scripts"
+      className="w-full h-full border-0 rounded-lg"
+      style={{ minHeight: 300 }}
+      title="HTML Artifact"
+    />
+  )
+}
+
+function ArtifactCard({ artifact, onFullscreen }: { artifact: ArtifactData; onFullscreen: () => void }) {
+  const [collapsed, setCollapsed] = useState(false)
+  if (collapsed) {
+    return (
+      <div className="flex items-center gap-2 p-2 bg-bg-secondary border border-border rounded-lg cursor-pointer"
+        onClick={() => setCollapsed(false)}>
+        <span className="text-sm">📄</span>
+        <span className="text-xs text-text-secondary font-medium">{artifact.title || artifact.type}</span>
+        <span className="text-xs text-text-muted ml-auto">▸ expand</span>
+      </div>
+    )
+  }
+  return (
+    <div className="my-3 border border-border rounded-xl overflow-hidden bg-bg-secondary">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-bg-tertiary/50">
+        <span className="text-xs font-medium text-text-secondary">{artifact.title || artifact.type}</span>
+        <div className="flex-1" />
+        <button onClick={onFullscreen} className="text-xs text-text-muted hover:text-text-primary px-2 py-0.5 rounded" title="Fullscreen">⛶</button>
+        <button onClick={() => {
+          try {
+            const blob = new Blob([artifact.content], { type: "text/html" })
+            const url = URL.createObjectURL(blob)
+            window.open(url, "_blank")
+          } catch {}
+        }} className="text-xs text-text-muted hover:text-text-primary px-2 py-0.5 rounded" title="Open in new tab">🔗</button>
+        <button onClick={() => setCollapsed(true)} className="text-xs text-text-muted hover:text-text-primary px-2 py-0.5 rounded" title="Collapse">▾</button>
+      </div>
+      <div style={{ height: artifact.streaming ? 200 : 400 }}>
+        {artifact.streaming ? (
+          <div className="flex items-center justify-center h-full text-xs text-text-muted">
+            <span>Generating…</span>
+          </div>
+        ) : (
+          <HtmlView html={artifact.content} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 const API = ""
 async function fetchJSON(url: string, init?: RequestInit) {
   const res = await fetch(`${API}${url}`, init)
@@ -49,10 +111,13 @@ interface Msg { id: string; role: string; content: string; thinking?: string; to
 // Ordered stream items for correct interleaving of thinking/tools/text
 interface StreamItem {
   id: string
-  type: "thinking" | "tool" | "text"
+  type: "thinking" | "tool" | "text" | "artifact"
   content: string
   toolName?: string
   toolStatus?: string
+  artifactTitle?: string
+  artifactType?: string
+  artifactStreaming?: boolean
 }
 
 export default function Home() {
@@ -76,6 +141,7 @@ export default function Home() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
+  const [fullscreenArtifact, setFullscreenArtifact] = useState<ArtifactData | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -288,6 +354,28 @@ export default function Home() {
                   setStreamItems(items)
                 }
               }
+              else if (ev.type === "artifact_start") {
+                pushItem({ id: ev.artifactId, type: "artifact", content: "", artifactTitle: ev.title || ev.artifactType, artifactType: ev.artifactType, artifactStreaming: true })
+              }
+              else if (ev.type === "artifact_delta") {
+                // Find the artifact item and append delta
+                for (var ai = items.length - 1; ai >= 0; ai--) {
+                  if (items[ai].id === ev.artifactId && items[ai].type === "artifact") {
+                    items = [...items.slice(0, ai), { ...items[ai], content: items[ai].content + ev.delta }, ...items.slice(ai + 1)]
+                    setStreamItems(items)
+                    break
+                  }
+                }
+              }
+              else if (ev.type === "artifact_end") {
+                for (var aj = items.length - 1; aj >= 0; aj--) {
+                  if (items[aj].id === ev.artifactId && items[aj].type === "artifact") {
+                    items = [...items.slice(0, aj), { ...items[aj], artifactStreaming: false }, ...items.slice(aj + 1)]
+                    setStreamItems(items)
+                    break
+                  }
+                }
+              }
               else if (ev.type === "agent_end") { if (ev.sessionId) { newSid = ev.sessionId; activeIdRef.current = ev.sessionId } }
             } catch {}
           }
@@ -334,6 +422,21 @@ export default function Home() {
       onDragOver={function(e) { e.preventDefault(); setDragOver(true) }}
       onDragLeave={function(e) { e.preventDefault(); setDragOver(false) }}
       onDrop={handleDrop}>
+
+      {/* Fullscreen artifact overlay */}
+      {fullscreenArtifact ? (
+        <div className="fixed inset-0 z-50 bg-bg-primary flex flex-col" onKeyDown={function(e) { if (e.key === "Escape") setFullscreenArtifact(null) }}>
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
+            <span className="text-sm font-medium text-text-primary">{fullscreenArtifact.title || "Artifact"}</span>
+            <div className="flex-1" />
+            <button onClick={function() { try { const blob = new Blob([fullscreenArtifact.content], { type: "text/html" }); window.open(URL.createObjectURL(blob), "_blank") } catch {} }} className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded">🔗 New Tab</button>
+            <button onClick={function() { setFullscreenArtifact(null) }} className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded">✕ Close</button>
+          </div>
+          <div className="flex-1">
+            <HtmlView html={fullscreenArtifact.content} />
+          </div>
+        </div>
+      ) : null}
 
       {/* Sidebar */}
       {sidebarOpen ? (
@@ -519,6 +622,10 @@ export default function Home() {
                       <div className="mt-1.5 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{item.content}</div>
                     </details>
                   )
+                }
+                if (item.type === "artifact") {
+                  var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, streaming: item.artifactStreaming || false }
+                  return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
                 }
                 if (item.type === "tool") {
                   var hasDetail = item.content && item.content.length > 10
