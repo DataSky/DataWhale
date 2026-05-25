@@ -226,7 +226,15 @@ app.get("/api/files/:sessionId/:filename", async (c) => {
   const filePath = `${process.env.HOME || "~"}/.datawhale/plots/${sessionId}/${filename}`
   const file = Bun.file(filePath)
   if (!(await file.exists())) return c.json({ error: "not found" }, 404)
-  return new Response(file)
+  const ext = filename.split(".").pop()?.toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+    svg: "image/svg+xml", webp: "image/webp", pdf: "application/pdf",
+    csv: "text/csv", json: "application/json", txt: "text/plain",
+  }
+  return new Response(file, {
+    headers: { "Content-Type": mimeTypes[ext || ""] || "application/octet-stream" }
+  })
 })
 
 app.post("/api/upload", async (c) => {
