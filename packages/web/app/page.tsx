@@ -99,6 +99,32 @@ function ArtifactCard({ artifact, onFullscreen }: { artifact: ArtifactData; onFu
   )
 }
 
+// ── Agent Status Bar ────────────────────────────────────────────────────────
+
+const PHASE_LABELS: Record<AgentPhase, string> = {
+  thinking: "Thinking…",
+  executing: "Executing tools…",
+  generating: "Generating response…",
+  done: "Done",
+}
+
+function AgentStatusBar({ phase, spinnerFrame, elapsed, turnCount, toolCount, streaming }: {
+  phase: AgentPhase; spinnerFrame: number; elapsed: number; turnCount: number; toolCount: number; streaming: boolean
+}) {
+  if (!streaming) return null
+  const spinner = SPINNER_FRAMES[spinnerFrame]
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 bg-bg-secondary/80 border border-border rounded-xl text-xs text-text-muted">
+      <span className="text-accent font-mono">{spinner}</span>
+      <span className="text-text-secondary font-medium">{PHASE_LABELS[phase]}</span>
+      <span className="text-text-muted/60">·</span>
+      <span>{elapsed.toFixed(1)}s</span>
+      {turnCount > 0 && <><span className="text-text-muted/60">·</span><span>Turn {turnCount}</span></>}
+      {toolCount > 0 && <><span className="text-text-muted/60">·</span><span>{toolCount} tool{toolCount>1?'s':''}</span></>}
+    </div>
+  )
+}
+
 const API = ""
 async function fetchJSON(url: string, init?: RequestInit) {
   const res = await fetch(`${API}${url}`, init)
@@ -115,10 +141,14 @@ interface StreamItem {
   content: string
   toolName?: string
   toolStatus?: string
+  toolStartedAt?: number   // timestamp when tool execution began (for elapsed display)
   artifactTitle?: string
   artifactType?: string
   artifactStreaming?: boolean
 }
+
+const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+type AgentPhase = "thinking" | "executing" | "generating" | "done"
 
 export default function Home() {
   const [sessions, setSessions] = useState<any[]>([])
@@ -142,11 +172,28 @@ export default function Home() {
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
   const [fullscreenArtifact, setFullscreenArtifact] = useState<ArtifactData | null>(null)
+  const [spinnerFrame, setSpinnerFrame] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
+  const [agentPhase, setAgentPhase] = useState<AgentPhase>("thinking")
+  const [turnCount, setTurnCount] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeIdRef = useRef<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const elapsedStartRef = useRef<number>(0)
+  const toolStartRef = useRef<Record<string, number>>({})
+
+  // Heartbeat timer: drives spinner animation + elapsed counter while streaming
+  useEffect(() => {
+    if (!streaming) { setSpinnerFrame(0); setElapsed(0); setAgentPhase("done"); setTurnCount(0); return }
+    elapsedStartRef.current = Date.now()
+    const timer = setInterval(() => {
+      setSpinnerFrame(f => (f + 1) % SPINNER_FRAMES.length)
+      setElapsed(Math.round((Date.now() - elapsedStartRef.current) / 100) / 10)
+    }, 100)
+    return () => clearInterval(timer)
+  }, [streaming])
 
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => {
@@ -321,6 +368,7 @@ export default function Home() {
               // Update sessionId from ANY event that carries it
               if (ev.sessionId && !newSid) { newSid = ev.sessionId; activeIdRef.current = ev.sessionId }
               if (ev.type === "message_update") {
+                setAgentPhase("generating")
                 content += ev.delta
                 if (items.length > 0 && items[items.length - 1].type === "text") {
                   updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
@@ -329,6 +377,7 @@ export default function Home() {
                 }
               }
               else if (ev.type === "reasoning_update") {
+                setAgentPhase("thinking")
                 thinking += ev.delta
                 if (items.length > 0 && items[items.length - 1].type === "thinking") {
                   updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
@@ -337,13 +386,15 @@ export default function Home() {
                 }
               }
               else if (ev.type === "tool_call_start") {
+                setAgentPhase("executing")
+                toolStartRef.current[ev.toolCallId] = Date.now()
                 tools = [...tools, { id: ev.toolCallId, name: ev.toolName, status: "running" }]
                 var existingIdx = toolIndexMap[ev.toolCallId]
                 if (existingIdx !== undefined && existingIdx < items.length && items[existingIdx].id === ev.toolCallId) {
-                  items = [...items.slice(0, existingIdx), { ...items[existingIdx], toolStatus: "running" }, ...items.slice(existingIdx + 1)]
+                  items = [...items.slice(0, existingIdx), { ...items[existingIdx], toolStatus: "running", toolStartedAt: Date.now() }, ...items.slice(existingIdx + 1)]
                   setStreamItems(items)
                 } else {
-                  pushItem({ id: ev.toolCallId, type: "tool", content: "", toolName: ev.toolName, toolStatus: "running" })
+                  pushItem({ id: ev.toolCallId, type: "tool", content: "", toolName: ev.toolName, toolStatus: "running", toolStartedAt: Date.now() })
                 }
               }
               else if (ev.type === "tool_call_end") {
@@ -376,6 +427,7 @@ export default function Home() {
                   }
                 }
               }
+              else if (ev.type === "turn_start") { setTurnCount(ev.turn) }
               else if (ev.type === "agent_end") { if (ev.sessionId) { newSid = ev.sessionId; activeIdRef.current = ev.sessionId } }
             } catch {}
           }
@@ -634,9 +686,13 @@ export default function Home() {
             )
           })}
 
-          {/* Streaming */}          {/* Streaming */}
+          {/* Streaming */}
           {streaming ? (
             <div className="msg-enter flex justify-start"><div className="max-w-[85%] min-w-0 space-y-1.5">
+              {/* Agent pulse — always visible while streaming */}
+              <AgentStatusBar phase={agentPhase} spinnerFrame={spinnerFrame} elapsed={elapsed}
+                turnCount={turnCount} toolCount={streamItems.filter(function(it) { return it.type === "tool" && it.toolStatus === "running" }).length + streamItems.filter(function(it) { return it.type === "tool" && it.toolStatus === "done" }).length}
+                streaming={streaming} />
               {streamItems.length === 0 ? (
                 <div className="flex gap-1.5 py-2"><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} /></div>
               ) : null}
@@ -656,6 +712,11 @@ export default function Home() {
                 if (item.type === "tool") {
                   var hasDetail = item.content && item.content.length > 10
                   var isExpanded = expandedTools[item.id] || false
+                  // Calculate elapsed for running tools
+                  var toolElapsed = ""
+                  if (item.toolStatus === "running" && item.toolStartedAt) {
+                    toolElapsed = ((Date.now() - item.toolStartedAt) / 1000).toFixed(1) + "s"
+                  }
                   return (
                     <div key={item.id} className="text-xs">
                       <div 
@@ -666,6 +727,7 @@ export default function Home() {
                           {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
                         </span>
                         <span className="text-text-secondary font-medium shrink-0">{item.toolName}</span>
+                        {item.toolStatus === "running" && toolElapsed ? <span className="text-text-muted/60 shrink-0">{toolElapsed}</span> : null}
                         {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate min-w-0">{item.content.slice(0, 80)}</span> : null}
                         {hasDetail && item.toolStatus === "done" ? <span className="text-text-muted shrink-0 ml-auto text-[10px]">{isExpanded ? "▾" : "▸"}</span> : null}
                       </div>
