@@ -629,6 +629,12 @@ export default function Home() {
             })}
           </div>
 
+          {/* Navigation footer */}
+          <div className="border-t border-border p-2 space-y-0.5">
+            <a href="/dashboard" className="block px-3 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors">📊 Dashboard</a>
+            <a href="/settings" className="block px-3 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors">⚙️ Settings</a>
+          </div>
+
         </aside>
       ) : null}
 
