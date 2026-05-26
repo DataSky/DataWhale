@@ -742,25 +742,6 @@ export default function Home() {
                                 }
                                 return <MarkdownView key={item.id} content={item.content} />
                               })}
-                              {/* Session assets — inside last assistant bubble, only when >1 distinct artifact */}
-                              {ti === turns.length - 1 && isLastInTurn && messages.reduce(function(acc, m) { return acc + (m.artifacts ? m.artifacts.length : 0) }, 0) > 1 ? (
-                                <div className="mt-3 pt-3 border-t border-border/50">
-                                  <p className="text-xs text-text-muted/60 mb-1.5">📦 Session Assets</p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).map(function(m) {
-                                      return m.artifacts!.map(function(a) {
-                                        return (
-                                          <span key={a.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-bg-tertiary text-xs text-text-muted">
-                                            <span>📄</span>
-                                            <span className="max-w-[120px] truncate">{a.title || "HTML"}</span>
-                                            <a href={a.fileUrl || "#"} target="_blank" className="text-text-muted/50 hover:text-accent">🔗</a>
-                                          </span>
-                                        )
-                                      })
-                                    })}
-                                  </div>
-                                </div>
-                              ) : null}
                               {/* Artifacts — rendered once here (not in stream items above) */}
                               {msg.artifacts && msg.artifacts.length > 0 ? (
                                 <div className="mt-3 space-y-2">
@@ -824,25 +805,6 @@ export default function Home() {
                               {msg.artifacts.map(function(a) {
                                 return <ArtifactCard key={a.id} artifact={a} onFullscreen={function() { setFullscreenArtifact(a) }} />
                               })}
-                            </div>
-                          ) : null}
-                          {/* Session assets — inside last assistant bubble, only when >1 distinct artifact */}
-                          {ti === turns.length - 1 && isLastInTurn && messages.reduce(function(acc, m) { return acc + (m.artifacts ? m.artifacts.length : 0) }, 0) > 1 ? (
-                            <div className="mt-3 pt-3 border-t border-border/50">
-                              <p className="text-xs text-text-muted/60 mb-1.5">📦 Session Assets</p>
-                              <div className="flex flex-wrap gap-1">
-                                {messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).map(function(m) {
-                                  return m.artifacts!.map(function(a) {
-                                    return (
-                                      <span key={a.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-bg-tertiary text-xs text-text-muted">
-                                        <span>📄</span>
-                                        <span className="max-w-[120px] truncate">{a.title || "HTML"}</span>
-                                        <a href={a.fileUrl || "#"} target="_blank" className="text-text-muted/50 hover:text-accent">🔗</a>
-                                      </span>
-                                    )
-                                  })
-                                })}
-                              </div>
                             </div>
                           ) : null}
                           {/* Separator between ReAct steps */}
