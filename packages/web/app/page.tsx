@@ -91,9 +91,13 @@ function ArtifactCard({ artifact, onFullscreen }: { artifact: ArtifactData; onFu
         <button onClick={onFullscreen} className="text-xs text-text-muted hover:text-text-primary px-2 py-0.5 rounded" title="Fullscreen">⛶</button>
         <button onClick={() => {
           try {
-            const blob = new Blob([artifact.content], { type: "text/html" })
-            const url = URL.createObjectURL(blob)
-            window.open(url, "_blank")
+            if (artifact.fileUrl) {
+              window.open(artifact.fileUrl, "_blank")
+            } else if (artifact.content) {
+              const blob = new Blob([artifact.content], { type: "text/html" })
+              const url = URL.createObjectURL(blob)
+              window.open(url, "_blank")
+            }
           } catch {}
         }} className="text-xs text-text-muted hover:text-text-primary px-2 py-0.5 rounded" title="Open in new tab">🔗</button>
         <button onClick={() => setCollapsed(true)} className="text-xs text-text-muted hover:text-text-primary px-2 py-0.5 rounded" title="Collapse">▾</button>
@@ -565,7 +569,7 @@ export default function Home() {
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
             <span className="text-sm font-medium text-text-primary">{fullscreenArtifact.title || "Artifact"}</span>
             <div className="flex-1" />
-            <button onClick={function() { try { const blob = new Blob([fullscreenArtifact.content], { type: "text/html" }); window.open(URL.createObjectURL(blob), "_blank") } catch {} }} className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded">🔗 New Tab</button>
+            <button onClick={function() { try { if (fullscreenArtifact.fileUrl) { window.open(fullscreenArtifact.fileUrl, "_blank") } else if (fullscreenArtifact.content) { const blob = new Blob([fullscreenArtifact.content], { type: "text/html" }); window.open(URL.createObjectURL(blob), "_blank") } } catch {} }} className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded">🔗 New Tab</button>
             <button onClick={function() { setFullscreenArtifact(null) }} className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded">✕ Close</button>
           </div>
           <div className="flex-1">
