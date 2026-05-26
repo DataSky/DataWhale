@@ -8,11 +8,9 @@ import { marked } from "marked"
 function normalizeNewlines(text: string): string {
   const lines = text.split("\n")
   const nonEmpty = lines.filter(l => l.trim().length > 0)
-  // Aggressive: merge if any single-char lines exist (>= 20%)
-  if (nonEmpty.length < 2) return text
+  // Merge if any single-char lines exist — catches even short DeepSeek outputs
   const singleChars = nonEmpty.filter(l => l.trim().length <= 2).length
-  // >= 20% single-char lines = DeepSeek one-word-per-line pattern → merge
-  if (singleChars < nonEmpty.length * 0.2) return text
+  if (singleChars === 0) return text
 
   const merged: string[] = []
   let buf = ""
