@@ -303,7 +303,18 @@ export default function Home() {
               }
             }
           }
-          msgs.push({ id: "aq" + q.id, role: "assistant", content: text, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: q.createdAt || Date.now() })
+          // Rebuild _streamItems for this query's assistant message
+          var qStreamItems: StreamItem[] | undefined
+          if (thinking || tools.length > 0 || text) {
+            var qsitems: StreamItem[] = []
+            if (thinking) qsitems.push({ id: "rq" + q.id, type: "thinking", content: thinking })
+            for (var tqi = 0; tqi < tools.length; tqi++) {
+              qsitems.push({ id: tools[tqi].id || ("rq" + q.id + "t" + tqi), type: "tool", content: tools[tqi].detail || "", toolName: tools[tqi].name, toolStatus: "done" })
+            }
+            if (text) qsitems.push({ id: "rq" + q.id + "c", type: "text", content: text })
+            if (qsitems.length > 0) qStreamItems = qsitems
+          }
+          msgs.push({ id: "aq" + q.id, role: "assistant", content: text, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: q.createdAt || Date.now(), _streamItems: qStreamItems })
         }
         // Also load artifacts from messages API (artifacts are stored in message meta, not queries)
         try {
@@ -375,7 +386,25 @@ export default function Home() {
           if (m.role === "user" && m.meta && m.meta.files && Array.isArray(m.meta.files)) {
             files = m.meta.files
           }
-          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, files: files, ts: m.timestamp || 0 })
+          // Rebuild _streamItems for interleaved rendering (thinking → tools → text → artifacts)
+          var streamItems: StreamItem[] | undefined
+          if (m.role === "assistant") {
+            var sitems: StreamItem[] = []
+            if (m.thinking) sitems.push({ id: "rt" + i, type: "thinking", content: m.thinking })
+            if (tools && tools.length > 0) {
+              for (var ti = 0; ti < tools.length; ti++) {
+                sitems.push({ id: tools[ti].id || ("rt" + i + "t" + ti), type: "tool", content: tools[ti].detail || "", toolName: tools[ti].name, toolStatus: "done" })
+              }
+            }
+            if (c) sitems.push({ id: "rt" + i + "c", type: "text", content: c })
+            if (artifacts && artifacts.length > 0) {
+              for (var ai = 0; ai < artifacts.length; ai++) {
+                sitems.push({ id: artifacts[ai].id, type: "artifact", content: artifacts[ai].content, artifactTitle: artifacts[ai].title, artifactType: artifacts[ai].type, artifactFileUrl: artifacts[ai].fileUrl, artifactStreaming: false })
+              }
+            }
+            if (sitems.length > 0) streamItems = sitems
+          }
+          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, files: files, _streamItems: streamItems, ts: m.timestamp || 0 })
         }
         setMessages(msgs)
       }
