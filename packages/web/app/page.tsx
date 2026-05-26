@@ -330,12 +330,36 @@ export default function Home() {
                 }))
               }
             }
-            // Attach artifacts by order to assistant messages in msgs
-            var artIdx = 0
-            for (var mj = 0; mj < msgs.length && artIdx < artList.length; mj++) {
+            // Attach ALL artifacts to assistant messages in msgs.
+            // Query API path produces 1 assistant per query, but messages have many assistants.
+            // Merge all artifact arrays into each assistant, and append to _streamItems.
+            var allArtifacts: ArtifactData[] = []
+            for (var ak = 0; ak < artList.length; ak++) {
+              for (var al = 0; al < artList[ak].length; al++) allArtifacts.push(artList[ak][al])
+            }
+            for (var mj = 0; mj < msgs.length; mj++) {
               if (msgs[mj].role === "assistant") {
-                msgs[mj].artifacts = artList[artIdx]
-                artIdx++
+                msgs[mj].artifacts = allArtifacts.length > 0 ? allArtifacts : undefined
+                // Append artifact items to _streamItems so they render inline
+                if (msgs[mj]._streamItems && allArtifacts.length > 0) {
+                  for (var aai = 0; aai < allArtifacts.length; aai++) {
+                    msgs[mj]._streamItems!.push({
+                      id: allArtifacts[aai].id, type: "artifact", content: allArtifacts[aai].content,
+                      artifactTitle: allArtifacts[aai].title, artifactType: allArtifacts[aai].type,
+                      artifactFileUrl: allArtifacts[aai].fileUrl, artifactStreaming: false,
+                    })
+                  }
+                } else if (allArtifacts.length > 0) {
+                  var sitems2: StreamItem[] = []
+                  for (var aai2 = 0; aai2 < allArtifacts.length; aai2++) {
+                    sitems2.push({
+                      id: allArtifacts[aai2].id, type: "artifact", content: allArtifacts[aai2].content,
+                      artifactTitle: allArtifacts[aai2].title, artifactType: allArtifacts[aai2].type,
+                      artifactFileUrl: allArtifacts[aai2].fileUrl, artifactStreaming: false,
+                    })
+                  }
+                  msgs[mj]._streamItems = sitems2
+                }
               }
             }
             // Also restore file attachments for user messages
