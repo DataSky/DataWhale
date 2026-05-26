@@ -305,6 +305,9 @@ const sandboxExecTool: AgentTool = {
     "⚠️ HTML OUTPUT: System auto-detects .html files in your working directory and renders them as " +
     "interactive artifact cards. This is the ONLY way to generate HTML — use it for all dashboards, " +
     "charts, and reports (no size limit). Always write HTML with relative paths. " +
+    "⚠️ CRITICAL: Generate the ENTIRE HTML in ONE sandbox_exec call. Build the full HTML string in " +
+    "Python variables, then write once with open('f','w').write(content). NEVER split writing " +
+    "across multiple calls — open('f','w') clears the file each time. " +
     "Use Python string concatenation instead of embedding raw HTML in code. " +
     "For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
     "For persistent cross-session storage, use /mnt/oss/ (mounted automatically).",
@@ -394,23 +397,23 @@ if os.path.exists(base):
 `, { timeoutMs: 5000 })
     } catch {}
 
-    // Snapshot existing files before execution so we can export only new/changed files
-    let preSnapshot: string[] = []
+    // Snapshot existing files (path→size) before execution — only export new or changed files
+    let preSnapshot: Record<string, number> = {}
     try {
       const snapshotCode = `
 import os, json
-files = []
+files = {}
 for d in ["${outputDir()}", "/tmp"]:
     try:
         for f in os.listdir(d):
             fp = os.path.join(d, f)
             if os.path.isfile(fp) and not f.startswith('systemd') and not f.startswith('.'):
-                files.append(fp)
+                files[fp] = os.path.getsize(fp)
     except: pass
 print(json.dumps(files))
 `
       const snapResult = await sandbox.runCode(snapshotCode, { timeoutMs: 5000 })
-      preSnapshot = JSON.parse(((snapResult.logs?.stdout || []) as string[]).join("").trim() || "[]")
+      preSnapshot = JSON.parse(((snapResult.logs?.stdout || []) as string[]).join("").trim() || "{}")
     } catch {}
 
     // Cd to session output directory so relative paths work naturally
@@ -456,8 +459,8 @@ print(json.dumps(files))
       if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true })
 
       // Scan session workspace directory (primary) + /tmp (backward compat)
-      // Only export files created/changed during this execution (delta from pre-snapshot)
-      const preSnapshotSet = new Set(preSnapshot)
+      // Export only new files OR files whose size changed (content was modified)
+      // preSnapshot maps path → size; if a file existed before with same size, skip it.
       const scanPaths = [
         { sandboxDir: outputDir(), source: "workspace" },
         { sandboxDir: "/tmp", source: "tmp" },
@@ -466,18 +469,18 @@ print(json.dumps(files))
       let fileIndex = 0
       for (const sp of scanPaths) {
         try {
-          const lsCode = `import os; [print(f) for f in sorted(os.listdir("${sp.sandboxDir}")) if os.path.isfile(os.path.join("${sp.sandboxDir}", f)) and not f.startswith('systemd') and not f.startswith('.') and not f.startswith('tmp')]`
+          const lsCode = `import os, json; d="${sp.sandboxDir}"; files=[]; 
+[files.append((f, os.path.getsize(os.path.join(d,f)))) for f in sorted(os.listdir(d)) if os.path.isfile(os.path.join(d,f)) and not f.startswith('systemd') and not f.startswith('.') and not f.startswith('tmp')];
+print(json.dumps(files))`
           const lsResult = await sandbox.runCode(lsCode, { timeoutMs: 5000 })
-          const fileList = ((lsResult.logs?.stdout || []) as string[])
-            .join("")
-            .trim()
-            .split("\n")
-            .filter(Boolean)
+          const raw = ((lsResult.logs?.stdout || []) as string[]).join("").trim()
+          let fileEntries: Array<[string, number]> = []
+          try { fileEntries = JSON.parse(raw) } catch {}
 
-          for (const fname of fileList) {
+          for (const [fname, currentSize] of fileEntries) {
             const sandboxPath = `${sp.sandboxDir}/${fname}`
-            // Skip files that existed before this execution (not delta)
-            if (preSnapshotSet.has(sandboxPath)) continue
+            // Skip files that existed unchanged (same path AND same size as before)
+            if (preSnapshot[sandboxPath] !== undefined && preSnapshot[sandboxPath] === currentSize) continue
             try {
               const localName = `${ts}_${fileIndex + 1}_${fname}`
               fileIndex++
