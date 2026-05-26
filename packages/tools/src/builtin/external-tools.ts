@@ -815,4 +815,5 @@ export const ExternalTools = {
   readLocalFile: readLocalFileTool,
   closeSandbox,
   pauseSandbox,
+  getSandbox,
 }

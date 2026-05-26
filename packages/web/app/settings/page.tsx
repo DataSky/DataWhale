@@ -48,7 +48,63 @@ export default function Settings() {
           {saved ? "✓ Saved" : "Save"}
         </button>
         <p className="text-xs text-text-muted">Keys are stored in ~/.datawhale/config.json</p>
+
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold mb-3">🖥️ Sandbox Status</h2>
+          <SandboxStatus />
+        </section>
       </main>
+    </div>
+  )
+}
+
+function SandboxStatus() {
+  const [status, setStatus] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+
+  const check = async () => {
+    setLoading(true)
+    try {
+      const r = await fetch(`${API}/api/sandbox/status`)
+      setStatus(await r.json())
+    } catch { setStatus({ connected: false, error: "fetch failed" }) }
+    setLoading(false)
+  }
+
+  useEffect(() => { check() }, [])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <span className={"inline-block w-2 h-2 rounded-full " + (status?.connected ? "bg-green-400" : "bg-red-400")} />
+        <span className="text-sm">{status?.connected ? "Connected" : "Disconnected"}</span>
+        <button onClick={check} disabled={loading}
+          className="ml-auto px-3 py-1 text-xs bg-bg-secondary border border-border rounded-lg hover:bg-bg-hover disabled:opacity-50">
+          {loading ? "Checking..." : "Test Connection"}
+        </button>
+      </div>
+      {status ? (
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="bg-bg-secondary rounded-lg p-3 border border-border">
+            <p className="text-text-muted mb-0.5">Sandbox ID</p>
+            <p className="text-text-secondary font-mono truncate">{status.sandboxId || "—"}</p>
+          </div>
+          <div className="bg-bg-secondary rounded-lg p-3 border border-border">
+            <p className="text-text-muted mb-0.5">Files in /tmp</p>
+            <p className="text-text-secondary">{status.fileCount ?? "—"}</p>
+          </div>
+          <div className="bg-bg-secondary rounded-lg p-3 border border-border">
+            <p className="text-text-muted mb-0.5">Uptime</p>
+            <p className="text-text-secondary">{status.uptime || "—"}</p>
+          </div>
+          {status.error ? (
+            <div className="bg-bg-secondary rounded-lg p-3 border border-red-500/30 col-span-2">
+              <p className="text-text-muted mb-0.5">Error</p>
+              <p className="text-red-400 text-xs">{status.error}</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -126,8 +126,9 @@ app.post("/api/chat", async (c) => {
     } catch {}
   }
 
-  // SSE stream
-  return streamSSE(c, async (stream) => {
+   const startTime = Date.now()
+   // SSE stream
+   return streamSSE(c, async (stream) => {
     stream.onAbort(() => agent.abort())
 
     agent.subscribe((event: AgentEvent) => {
@@ -141,10 +142,11 @@ app.post("/api/chat", async (c) => {
         case "reasoning_update":
           data.delta = event.delta
           break
-        case "tool_call_start":
+         case "tool_call_start":
           data.toolCallId = event.toolCallId
           data.toolName = event.toolName
           data.args = event.args
+          traceStore.record({ sessionId, eventType: "tool_call", toolName: event.toolName, inputTokens: 0, outputTokens: 0, timestamp: Date.now() }).catch(() => {})
           break
         case "tool_call_end":
           data.toolCallId = event.toolCallId
@@ -178,10 +180,17 @@ app.post("/api/chat", async (c) => {
             }
           }
           break
-        case "agent_end":
+         case "agent_end":
           data.status = event.state.status
           data.error = event.state.error
           data.sessionId = sessionId
+          traceStore.record({
+            sessionId, eventType: "agent_end",
+            inputTokens: event.state.usage?.inputTokens || 0,
+            outputTokens: event.state.usage?.outputTokens || 0,
+            latencyMs: Date.now() - startTime,
+            timestamp: Date.now(),
+          }).catch(() => {})
           // Auto-save session
           sessionStore.saveMessages(sessionId, event.state.messages).catch(() => {})
           // Persist file attachments separately (files are not part of agent state)
@@ -402,6 +411,23 @@ app.put("/api/config", async (c) => {
 })
 
 // ─── Monitoring ───────────────────────────────────────────────────────────
+
+// Sandbox status check
+app.get("/api/sandbox/status", async (c) => {
+  try {
+    const sb = await ExternalTools.getSandbox()
+    const health = await sb.runCode("1+1", { timeoutMs: 3000 })
+    const alive = !health.error
+    const lsResult = await sb.runCode(
+      "import os; print(len([f for f in os.listdir('/tmp') if os.path.isfile('/tmp/'+f) and not f.startswith('systemd')]))",
+      { timeoutMs: 3000 }
+    )
+    const fileCount = parseInt(((lsResult.logs?.stdout || []) as string[]).join("").trim() || "0")
+    return c.json({ connected: alive, sandboxId: sb.sandboxId || "unknown", fileCount, uptime: alive ? "active" : "dead" })
+  } catch (e: any) {
+    return c.json({ connected: false, error: e?.message || "unknown", uptime: "dead" })
+  }
+})
 
 app.get("/api/monitoring", async (c) => {
   const traces = await traceStore.query(undefined, undefined, 500)
