@@ -431,37 +431,56 @@ app.get("/api/sandbox/status", async (c) => {
 })
 
 app.get("/api/monitoring", async (c) => {
-  const traces = await traceStore.query(undefined, undefined, 500)
-  // Aggregate
-  const byDay: Record<string, { tokens: number; errors: number; latencyMs: number; count: number }> = {}
+  const range = (c.req.query("range") as string) || "7d"
+  const granularity = (c.req.query("granularity") as string) || "day"
+  const now = Date.now()
+  let since = now - 7 * 86400_000
+  if (range === "24h") since = now - 86400_000
+  else if (range === "30d") since = now - 30 * 86400_000
+
+  // Custom date range
+  const fromParam = c.req.query("from")
+  const toParam = c.req.query("to")
+  if (fromParam) since = new Date(fromParam as string).getTime()
+  const until = toParam ? new Date(toParam as string).getTime() : now
+
+  const traces = await traceStore.query(undefined, undefined, 2000)
+
+  const byBucket: Record<string, { tokens: number; errors: number; latencyMs: number; count: number }> = {}
   const modelCounts: Record<string, number> = {}
   const toolCounts: Record<string, number> = {}
 
   for (const t of traces) {
-    const day = new Date(t.timestamp).toISOString().slice(0, 10)
-    if (!byDay[day]) byDay[day] = { tokens: 0, errors: 0, latencyMs: 0, count: 0 }
-    const d = byDay[day]
-    d.count++
-    d.tokens += (t.inputTokens || 0) + (t.outputTokens || 0)
-    if (t.latencyMs) d.latencyMs += t.latencyMs
-    if (t.eventType === "error") d.errors++
+    if (t.timestamp < since || t.timestamp > until) continue
+    const d = new Date(t.timestamp)
+    const key = granularity === "hour"
+      ? d.toISOString().slice(0, 13).replace("T", " ") + ":00"
+      : d.toISOString().slice(0, 10)
 
-    if (t.model) { modelCounts[t.model] = (modelCounts[t.model] || 0) + 1 }
-    if (t.toolName) { toolCounts[t.toolName] = (toolCounts[t.toolName] || 0) + 1 }
+    if (!byBucket[key]) byBucket[key] = { tokens: 0, errors: 0, latencyMs: 0, count: 0 }
+    const b = byBucket[key]
+    b.count++
+    b.tokens += (t.inputTokens || 0) + (t.outputTokens || 0)
+    if (t.latencyMs) b.latencyMs += t.latencyMs
+    if (t.eventType === "error") b.errors++
+    if (t.model) modelCounts[t.model] = (modelCounts[t.model] || 0) + 1
+    if (t.toolName) toolCounts[t.toolName] = (toolCounts[t.toolName] || 0) + 1
   }
 
-  // Sort tool counts
   const topTools = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]).slice(0, 10)
+  const buckets = Object.entries(byBucket)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([time, d]) => ({
+      time, tokens: d.tokens, errors: d.errors,
+      avgLatency: d.count > 0 ? Math.round(d.latencyMs / d.count) : 0, count: d.count,
+    }))
 
   return c.json({
-    daily: Object.entries(byDay).map(([day, d]) => ({
-      day, tokens: d.tokens, errors: d.errors,
-      avgLatency: d.count > 0 ? Math.round(d.latencyMs / d.count) : 0, count: d.count,
-    })),
+    buckets, range, granularity,
     modelDistribution: Object.entries(modelCounts).map(([model, count]) => ({ model, count })),
     topTools: topTools.map(([name, count]) => ({ name, count })),
-    totalTokens: Object.values(byDay).reduce((s, d) => s + d.tokens, 0),
-    totalErrors: Object.values(byDay).reduce((s, d) => s + d.errors, 0),
+    totalTokens: Object.values(byBucket).reduce((s, d) => s + d.tokens, 0),
+    totalErrors: Object.values(byBucket).reduce((s, d) => s + d.errors, 0),
   })
 })
 
