@@ -8,9 +8,11 @@ import { marked } from "marked"
 function normalizeNewlines(text: string): string {
   const lines = text.split("\n")
   const nonEmpty = lines.filter(l => l.trim().length > 0)
-  if (nonEmpty.length < 5) return text
+  // Lower bar: trigger merging earlier so streaming text is readable
+  if (nonEmpty.length < 3) return text
   const singleChars = nonEmpty.filter(l => l.trim().length <= 2).length
-  if (singleChars <= nonEmpty.length * 0.5) return text
+  // >30% single-char lines = DeepSeek one-word-per-line pattern → merge
+  if (singleChars <= nonEmpty.length * 0.3) return text
 
   const merged: string[] = []
   let buf = ""
@@ -478,12 +480,10 @@ export default function Home() {
                if (ev.type === "message_update") {
                 setAgentPhase("generating")
                 content += ev.delta
-                // Micro-buffer: append short deltas to last text item instead of creating new ones.
-                // DeepSeek V4 emits one-char-per-line deltas; merging them avoids visual flicker.
+                // Always append to last text item so normalizeNewlines sees full text.
+                // DeepSeek V4 emits one-char-per-line deltas; merging lets normalizeNewlines
+                // detect the pattern across the accumulated content (threshold: >50% single-char lines).
                 if (items.length > 0 && items[items.length - 1].type === "text") {
-                  updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
-                } else if (ev.delta && ev.delta.length <= 3 && items.length > 0 && items[items.length - 1].type === "text") {
-                  // Short delta → merge with previous text item even if it was already pushed
                   updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
                 } else {
                   pushItem({ id: "t" + Date.now(), type: "text", content: ev.delta })
