@@ -676,7 +676,7 @@ export default function Home() {
                                   onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n:{} = {}; Object.assign(n, p); n[msg.id] = false; return n }) }}>
                                   <span className="text-[10px]">▾</span><span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
                                 </summary>
-                                <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
+                                <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{normalizeNewlines(msg.thinking || "")}</div>
                               </details>
                             ) : (
                               <details className="mb-2">
@@ -684,7 +684,7 @@ export default function Home() {
                                   onClick={function(e) { e.preventDefault(); setExpandedThinking(function(p) { var n:{} = {}; Object.assign(n, p); n[msg.id] = true; return n }) }}>
                                   <span className="text-[10px]">▸</span><span>Thought for {Math.round(msg.thinking.length / 4)}s</span>
                                 </summary>
-                                <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{msg.thinking}</div>
+                                <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{normalizeNewlines(msg.thinking || "")}</div>
                               </details>
                             )
                           ) : null}

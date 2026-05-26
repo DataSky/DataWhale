@@ -261,6 +261,26 @@ export class SessionStore {
     }
     insertStmt.free()
 
+    // Flush any remaining artifacts onto the last assistant message.
+    // This handles the case where tool_results at the end of a turn
+    // produce artifacts but no subsequent assistant message exists yet.
+    if (pendingArtifacts.length > 0) {
+      const artJson = JSON.stringify(pendingArtifacts.map(a => {
+        const e: Record<string, unknown> = { id: a.id, type: a.type, title: a.title }
+        if (a.html) e.html = a.html
+        if (a.fileUrl) e.fileUrl = a.fileUrl
+        return e
+      }))
+      // Find the last assistant message in this batch and update its meta
+      const lastAssistant = [...newMessages].reverse().find(m => m.role === "assistant")
+      if (lastAssistant) {
+        const existingMeta: Record<string, unknown> = (lastAssistant.meta || {}) as Record<string, unknown>
+        existingMeta.artifacts = JSON.parse(artJson)
+        db.run("UPDATE messages SET meta = ? WHERE session_id = ? AND role = ? AND timestamp = ?",
+          [JSON.stringify(existingMeta), sessionId, "assistant", lastAssistant.timestamp])
+      }
+    }
+
     // Update session metadata — use our own counter, not table COUNT
     const newCount = alreadySaved + newMessages.length
     db.run("UPDATE sessions SET updated_at = ?, message_count = ? WHERE id = ?", [
