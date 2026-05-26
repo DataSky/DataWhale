@@ -8,11 +8,11 @@ import { marked } from "marked"
 function normalizeNewlines(text: string): string {
   const lines = text.split("\n")
   const nonEmpty = lines.filter(l => l.trim().length > 0)
-  // Lower bar: trigger merging earlier so streaming text is readable
-  if (nonEmpty.length < 3) return text
+  // Aggressive: merge if any single-char lines exist (>= 20%)
+  if (nonEmpty.length < 2) return text
   const singleChars = nonEmpty.filter(l => l.trim().length <= 2).length
-  // >30% single-char lines = DeepSeek one-word-per-line pattern → merge
-  if (singleChars <= nonEmpty.length * 0.3) return text
+  // >= 20% single-char lines = DeepSeek one-word-per-line pattern → merge
+  if (singleChars < nonEmpty.length * 0.2) return text
 
   const merged: string[] = []
   let buf = ""
@@ -740,8 +740,8 @@ export default function Home() {
                                 }
                                 return <MarkdownView key={item.id} content={item.content} />
                               })}
-                              {/* Session assets — inside last assistant bubble */}
-                              {ti === turns.length - 1 && isLastInTurn && messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).length > 0 ? (
+                              {/* Session assets — inside last assistant bubble, only when >1 distinct artifact */}
+                              {ti === turns.length - 1 && isLastInTurn && messages.reduce(function(acc, m) { return acc + (m.artifacts ? m.artifacts.length : 0) }, 0) > 1 ? (
                                 <div className="mt-3 pt-3 border-t border-border/50">
                                   <p className="text-xs text-text-muted/60 mb-1.5">📦 Session Assets</p>
                                   <div className="flex flex-wrap gap-1">
@@ -816,8 +816,8 @@ export default function Home() {
                               })}
                             </div>
                           ) : null}
-                          {/* Session assets — inside last assistant bubble */}
-                          {ti === turns.length - 1 && isLastInTurn && messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).length > 0 ? (
+                          {/* Session assets — inside last assistant bubble, only when >1 distinct artifact */}
+                          {ti === turns.length - 1 && isLastInTurn && messages.reduce(function(acc, m) { return acc + (m.artifacts ? m.artifacts.length : 0) }, 0) > 1 ? (
                             <div className="mt-3 pt-3 border-t border-border/50">
                               <p className="text-xs text-text-muted/60 mb-1.5">📦 Session Assets</p>
                               <div className="flex flex-wrap gap-1">
