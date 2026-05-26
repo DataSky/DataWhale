@@ -323,7 +323,11 @@ export default function Home() {
               }
             }
             if (c) sitems.push({ id: "rt" + i + "c", type: "text", content: c })
-            // Artifacts render via msg.artifacts section, not in stream items
+            if (artifacts && artifacts.length > 0) {
+              for (var ai2 = 0; ai2 < artifacts.length; ai2++) {
+                sitems.push({ id: artifacts[ai2].id, type: "artifact", content: artifacts[ai2].content, artifactTitle: artifacts[ai2].title, artifactType: artifacts[ai2].type, artifactFileUrl: artifacts[ai2].fileUrl, artifactStreaming: false })
+              }
+            }
             if (sitems.length > 0) streamItems = sitems
           }
           msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, files: files, _streamItems: streamItems, ts: m.timestamp || 0 })
@@ -510,9 +514,9 @@ export default function Home() {
         }
       }
       // Preserve the exact interleaved order of streamItems so final render matches streaming
-      // Exclude artifact items from stream — they render via msg.artifacts
-      var finalStreamItems: StreamItem[] = items.filter(function(it) { return it.type !== "artifact" }).map(function(it) {
+      var finalStreamItems: StreamItem[] = items.map(function(it) {
         if (it.type === "tool") return { ...it, toolStatus: "done" }
+        if (it.type === "artifact") return { ...it, artifactStreaming: false }
         return it
       })
       setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined, _streamItems: finalStreamItems }])
@@ -712,8 +716,8 @@ export default function Home() {
                                   )
                                 }
                                 if (item.type === "artifact") {
-                                  // Artifacts render via msg.artifacts section below, not inline in stream
-                                  return null
+                                  var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, fileUrl: item.artifactFileUrl, streaming: false }
+                                  return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
                                 }
                                 if (item.type === "tool") {
                                   var hasDetail = item.content && item.content.length > 10
