@@ -27,7 +27,7 @@ function normalizeNewlines(text: string): string {
     }
   }
   if (buf) merged.push(buf)
-  return merged.join("\n").replace(/\n{4,}/g, "\n\n\n")
+  return merged.join("\n").replace(/\n{3,}/g, "\n\n")
 }
 
 // Sanitize incomplete Markdown during streaming to prevent broken rendering.
