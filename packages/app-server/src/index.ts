@@ -436,7 +436,10 @@ const SYSTEM_PROMPT = `CURRENT DATE: ${dateStr} | TIME: ${timeStr} CST (UTC+8) |
 - 先 list_workspace_files 检查沙箱是否有数据
 - 结论+图表优先，不返回原始数据
 - HTML 仪表盘/报告：优先用 execute_python 写入 /tmp/xxx.html（无大小限制，自动渲染为卡片）
-- 仅 <2000 字符的小 HTML 使用 generate_html 工具`
+- **关键：不要在 Python 代码中直接写长 HTML 字符串**（会导致 JSON 解析失败）
+  正确做法：用 Python 动态拼接数据+模板，或用 open(file,'w') 分次写入
+- 仅 <2000 字符的小 HTML 使用 generate_html 工具
+- ECharts CDN：使用国内镜像 cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js`
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 

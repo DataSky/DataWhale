@@ -241,7 +241,7 @@ const executePythonTool: AgentTool = {
     "Always use print() for text output. For matplotlib plots, use plt.savefig('/tmp/plot.png') to save images. " +
     "⚠️ HTML OUTPUT: The system auto-detects .html files in /tmp/ (e.g., /tmp/dashboard.html) and renders them as interactive artifact cards " +
     "in the conversation. This supports ANY size HTML — no LLM token limits. Use this for complex dashboards, ECharts visualizations, " +
-    "and data-rich reports. Always write HTML files to /tmp/ directory. " +
+    "and data-rich reports. Always write HTML files to /tmp/ directory. Use Python string concatenation instead of embedding raw HTML in code. For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
     "For persistent storage, write files to /mnt/oss/ (Aliyun OSS bucket — automatically mounted).",
   parameters: {
     type: "object",
@@ -524,7 +524,7 @@ const generateHtmlTool: AgentTool = {
     "and limited by LLM output tokens. For larger HTML (dashboards, complex charts, data-heavy reports), " +
     "use execute_python to write the file to /tmp/xxx.html instead — it has no size limit and auto-renders. " +
     "Include complete <style> and <script> tags — the HTML runs in a sandboxed iframe. " +
-    "For charts, prefer using ECharts (CDN: https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js).",
+    "For charts, use ECharts from CDN: <script src=\"https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js\"></script>",
   parameters: {
     type: "object",
     properties: {
