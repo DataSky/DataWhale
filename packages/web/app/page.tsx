@@ -186,6 +186,9 @@ export default function Home() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameTitle, setRenameTitle] = useState("")
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([])
+  const removeUploadedFile = useCallback(function(name: string) {
+    setUploadedFiles(function(p) { return p.filter(function(f) { return f.name !== name }) })
+  }, [])
   const [dragOver, setDragOver] = useState(false)
   const [selectedModel, setSelectedModel] = useState("deepseek")
   const [theme, setTheme] = useState("dark")
@@ -606,12 +609,7 @@ export default function Home() {
               )
             })}
           </div>
-          {uploadedFiles.length > 0 ? (
-            <div className="border-t border-border p-3">
-              <p className="text-xs text-text-muted mb-1 font-medium">📁 Files</p>
-              {uploadedFiles.map(function(f) { return <div key={f.name} className="text-xs text-text-secondary truncate py-0.5">{f.name}</div> })}
-            </div>
-          ) : null}
+
         </aside>
       ) : null}
 
@@ -809,25 +807,61 @@ export default function Home() {
 
         {/* Input */}
         <div className="p-4 border-t border-border">
-          <div className="flex gap-2 max-w-3xl mx-auto">
-            <input ref={fileInputRef} type="file" accept=".csv,.json" className="hidden"
-              onChange={function(e) { var f = e.target.files?.[0]; if (f) handleFileUpload(f) }} />
-            <button onClick={function() { fileInputRef.current?.click() }} className="px-3 py-3 bg-bg-secondary border border-border rounded-xl text-text-muted hover:text-text-secondary hover:border-accent transition-colors shrink-0" title="Attach CSV/JSON">📎</button>
-            <textarea ref={inputRef} value={input} onChange={function(e) { setInput(e.target.value) }} onKeyDown={handleKeyDown}
-              placeholder="Ask about your data..." rows={3}
-              className="flex-1 bg-bg-secondary border border-border rounded-xl px-4 py-3 text-sm placeholder:text-text-muted resize-none outline-none focus:border-accent transition-colors min-h-[44px]"
-              disabled={streaming} />
-            {streaming ? (
-              <button onClick={handleStop}
-                className="px-6 py-3 bg-red-600 text-white rounded-xl font-medium text-sm hover:bg-red-700 transition-all shrink-0 self-end">
-                ⏹ Stop
-              </button>
-            ) : (
-              <button onClick={send} disabled={!input.trim()}
-                className="px-6 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-hover disabled:opacity-40 transition-all shrink-0 self-end">
-                Send
-              </button>
-            )}
+          <div className="max-w-3xl mx-auto space-y-2">
+            {/* File chips — show attached files as removable tags above the input */}
+            {uploadedFiles.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {uploadedFiles.map(function(f) {
+                  var isCsv = f.name.endsWith(".csv"), isJson = f.name.endsWith(".json")
+                  var icon = isCsv ? "📊" : isJson ? "📋" : "📄"
+                  return (
+                    <div key={f.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg-secondary border border-border/60 text-xs text-text-secondary group">
+                      <span>{icon}</span>
+                      <span className="max-w-[140px] truncate">{f.name}</span>
+                      <button onClick={function() { removeUploadedFile(f.name) }}
+                        className="ml-0.5 text-text-muted/50 hover:text-error transition-colors leading-none"
+                        title="Remove file">×</button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+
+            {/* Input row */}
+            <div className="relative">
+              <textarea ref={inputRef} value={input} onChange={function(e) { setInput(e.target.value) }} onKeyDown={handleKeyDown}
+                placeholder="Ask about your data..." rows={3}
+                className="w-full bg-bg-secondary border border-border rounded-xl px-4 py-3 pr-24 text-sm placeholder:text-text-muted resize-none outline-none focus:border-accent transition-colors min-h-[44px]"
+                disabled={streaming} />
+
+              {/* Action buttons — bottom-right corner of textarea */}
+              <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                <input ref={fileInputRef} type="file" accept=".csv,.json" className="hidden"
+                  onChange={function(e) { var f = e.target.files?.[0]; if (f) handleFileUpload(f) }} />
+                <button onClick={function() { fileInputRef.current?.click() }}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted/60 hover:text-accent hover:bg-accent/10 transition-colors"
+                  title="Attach file (CSV/JSON)">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <path d="M8 2v10M4 6l4-4 4 4M2 13h12" />
+                  </svg>
+                </button>
+                {streaming ? (
+                  <button onClick={handleStop}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-error/90 text-white hover:bg-error transition-colors"
+                    title="Stop">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1" /></svg>
+                  </button>
+                ) : (
+                  <button onClick={send} disabled={!input.trim()}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    title="Send (Enter)">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="8" y1="2" x2="8" y2="14" /><polyline points="4,6 8,2 12,6" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <p className="text-xs text-text-muted text-center mt-2">Enter to send · Drag files to upload</p>
         </div>
