@@ -295,22 +295,15 @@ export async function closeSandbox(): Promise<void> {
 const sandboxExecTool: AgentTool = {
   name: "sandbox_exec",
   description:
-    "Execute code in a secure cloud sandbox (E2B). Two execution modes available:\n" +
-    "• python (default): Python 3 with pandas, numpy, matplotlib, scipy, scikit-learn pre-installed.\n" +
-    "• bash: Shell commands (apt-get, pip, file ops, etc.) — runs in the session workspace.\n" +
-    "Your current working directory is your session's output directory — files saved with " +
-    "relative paths (e.g., open('report.html','w')) go there automatically. " +
-    "The sandbox persists for 30 minutes — you can run multiple cells and share data between them. " +
-    "Always use print() for Python text output. For matplotlib plots, use plt.savefig('plot.png'). " +
-    "⚠️ HTML OUTPUT: System auto-detects .html files in your working directory and renders them as " +
-    "interactive artifact cards. This is the ONLY way to generate HTML — use it for all dashboards, " +
-    "charts, and reports (no size limit). Always write HTML with relative paths. " +
-    "⚠️ CRITICAL: Generate the ENTIRE HTML in ONE sandbox_exec call. Build the full HTML string in " +
-    "Python variables, then write once with open('f','w').write(content). NEVER split writing " +
-    "across multiple calls — open('f','w') clears the file each time. " +
-    "Use Python string concatenation instead of embedding raw HTML in code. " +
-    "For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
-    "For persistent cross-session storage, use /mnt/oss/ (mounted automatically).",
+    "Execute code in a secure cloud sandbox (E2B). 🔴 FATAL: Never embed raw HTML strings in the code parameter — " +
+    "quotes/newlines in HTML break JSON → 'Failed to parse tool arguments'. Build HTML with Python string concatenation.\n" +
+    "• python (default): Python 3 with pandas, numpy, matplotlib, scipy, scikit-learn.\n" +
+    "• bash: Shell commands — use only for simple one-liners (heredoc/multiline may fail with 422).\n" +
+    "CWD = session output dir — relative paths auto-resolve. Sandbox persists 30min. " +
+    "For matplotlib, use plt.savefig('plot.png'). " +
+    "⚠️ HTML: ONE call to generate entire HTML. Build in Python variables, write once with open('f','w'). " +
+    "NEVER split across calls (open('f','w') clears file each time). " +
+    "ECharts CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js",
   parameters: {
     type: "object",
     properties: {

@@ -464,11 +464,16 @@ const SYSTEM_PROMPT = `CURRENT DATE: ${dateStr} | TIME: ${timeStr} CST (UTC+8) |
 - 深入分析用 sandbox_exec + pd.read_csv，不重新 query
 - 先 list_workspace_files 检查沙箱是否有数据
 - 结论+图表优先，不返回原始数据
-- HTML 仪表盘/报告：**统一使用 sandbox_exec**，写文件时用相对路径（如 open('report.html','w')）。
-  你的工作目录已自动设为会话输出目录，系统会自动检测 .html 文件并渲染为交互卡片。
-- **关键：一次调用生成完整 HTML**。用 Python 字符串拼接 + 一次 open(f,'w').write() 写入。
-  ⚠️ 禁止分多次 sandbox_exec 调用写同一文件 — open(f,'w') 每次都会清空文件！
-  如果内容太多，用变量累积再一次性 write()。不要用 open(f,'a') 追加。
+- HTML 仪表盘/报告：**统一使用 sandbox_exec**，工作目录已自动设为输出目录。
+- 🔴 **致命错误：绝对不要在 code 参数中直接写 HTML 字符串！**
+  HTML 含大量引号/换行符会破坏 JSON 结构 → Failed to parse tool arguments
+  ✅ 正确：用 Python 变量拼接片段，一次性写入文件。
+  标准模板：
+    parts = []; parts.append('<!DOCTYPE html>'); parts.append('<style>...</style>')
+    parts.append('<body>...</body>'); parts.append('<script>echarts...</script>')
+    html = '\n'.join(parts)
+    with open('report.html','w') as f: f.write(html)
+- ⚠️ 一次调用完成全部写入。禁止分多次 sandbox_exec 写同一文件 — 'w' 模式会清空。
 - ECharts CDN：使用国内镜像 cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js`
 
 // ─── Start ───────────────────────────────────────────────────────────────────
