@@ -435,11 +435,10 @@ const SYSTEM_PROMPT = `CURRENT DATE: ${dateStr} | TIME: ${timeStr} CST (UTC+8) |
 - 深入分析用 execute_python + pd.read_csv，不重新 query
 - 先 list_workspace_files 检查沙箱是否有数据
 - 结论+图表优先，不返回原始数据
-- HTML 仪表盘/报告：优先用 execute_python，写文件时用相对路径（如 open('report.html','w')）
-  因为你的工作目录已自动设为会话输出目录，文件会被自动检测和渲染为卡片
+- HTML 仪表盘/报告：**统一使用 execute_python**，写文件时用相对路径（如 open('report.html','w')）。
+  你的工作目录已自动设为会话输出目录，系统会自动检测 .html 文件并渲染为交互卡片。
 - **关键：不要在 Python 代码中直接写长 HTML 字符串**（会导致 JSON 解析失败）
   正确做法：用 Python 动态拼接数据+模板，或用 open(file,'w') 分次写入
-- 仅 <2000 字符的小 HTML 使用 generate_html 工具
 - ECharts CDN：使用国内镜像 cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js`
 
 // ─── Start ───────────────────────────────────────────────────────────────────

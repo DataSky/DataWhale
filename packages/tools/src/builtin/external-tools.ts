@@ -300,9 +300,9 @@ const executePythonTool: AgentTool = {
     "Supports pandas, numpy, matplotlib, scipy, scikit-learn. " +
     "The sandbox persists for 30 minutes — you can run multiple code cells and share data between them. " +
     "Always use print() for text output. For matplotlib plots, use plt.savefig('plot.png') and they'll appear inline. " +
-    "⚠️ HTML OUTPUT: System auto-detects .html files in your working directory and renders them as interactive " +
-    "artifact cards. This supports ANY size HTML — no LLM token limits. " +
-    "For complex dashboards, write HTML to the current directory (relative path). " +
+    "⚠️ HTML OUTPUT: System auto-detects .html files in your working directory and renders them as " +
+    "interactive artifact cards. This is the ONLY way to generate HTML — use it for all dashboards, " +
+    "charts, and reports (no size limit). Always write HTML with relative paths (e.g., open('report.html','w')). " +
     "Use Python string concatenation instead of embedding raw HTML in code. " +
     "For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
     "For persistent cross-session storage, use /mnt/oss/ (mounted automatically).",
@@ -654,56 +654,6 @@ const readLocalFileTool: AgentTool = {
   },
 }
 
-// ─── Generate HTML Artifact Tool ─────────────────────────────────────────────
-
-const generateHtmlTool: AgentTool = {
-  name: "generate_html",
-  description:
-    "Generate a small interactive HTML artifact and stream it to the frontend. " +
-    "The HTML will appear as an embedded card in the conversation that the user " +
-    "can expand to fullscreen or open in a separate tab. " +
-    "⚠️ TOKEN LIMIT: Only use this for HTML under ~2500 characters — the HTML is sent as a tool parameter " +
-    "and limited by LLM output tokens. For larger HTML (dashboards, complex charts, data-heavy reports), " +
-    "use execute_python to write the file to /tmp/xxx.html instead — it has no size limit and auto-renders. " +
-    "Include complete <style> and <script> tags — the HTML runs in a sandboxed iframe. " +
-    "For charts, use ECharts from CDN: <script src=\"https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js\"></script>",
-  parameters: {
-    type: "object",
-    properties: {
-      title: {
-        type: "string",
-        description: "Short title for the artifact card (e.g., 'Sales Dashboard')",
-      },
-      html: {
-        type: "string",
-        description: "Complete HTML content (with <style> and <script> tags). Must be self-contained.",
-      },
-    },
-    required: ["title", "html"],
-  },
-  executionMode: "sequential",
-  execute: async (_id, params) => {
-    const title = params.title as string
-    const html = params.html as string
-    const artifactId = `art_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-
-    if (_emitArtifact) {
-      _emitArtifact({ type: "artifact_start", artifactId, artifactType: "html", title })
-      // Stream in chunks so the frontend can show progressive loading
-      const chunkSize = 4096
-      for (let i = 0; i < html.length; i += chunkSize) {
-        _emitArtifact({ type: "artifact_delta", artifactId, delta: html.slice(i, i + chunkSize) })
-      }
-      _emitArtifact({ type: "artifact_end", artifactId })
-    }
-
-    return {
-      content: `✅ HTML artifact "${title}" generated (${html.length} chars). The user can view, expand, or open it in a separate tab.`,
-      details: { artifactId, title, artifactType: "html", artifactHtml: html, size: html.length },
-    }
-  },
-}
-
 // ─── OSS Mount (Aliyun / S3-compatible) ────────────────────────────────────
 
 async function mountOSSInit(sandbox: any): Promise<void> {
@@ -828,7 +778,7 @@ if len(results) > 25:
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export const ExternalTools = {
-  all: [webSearchTool, executePythonTool, sandboxDownloadTool, readLocalFileTool, generateHtmlTool, mountOSSTool] as AgentTool[],
+  all: [webSearchTool, executePythonTool, sandboxDownloadTool, readLocalFileTool, mountOSSTool] as AgentTool[],
   webSearch: webSearchTool,
   executePython: executePythonTool,
   listWorkspaceFiles: listWorkspaceFilesTool,

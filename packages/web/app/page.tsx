@@ -43,7 +43,7 @@ interface ArtifactData {
   id: string
   type: string
   title?: string
-  content: string       // inline HTML (from generate_html)
+  content: string       // inline HTML (legacy — all HTML now via execute_python)
   fileUrl?: string      // file path /api/files/... (from execute_python)
   streaming: boolean
 }
