@@ -350,6 +350,27 @@ export class SessionStore {
     return messages
   }
 
+  /** Persist uploaded file metadata to the latest user message of a session */
+  async attachFiles(sessionId: string, files: Array<{ name: string; path: string; size: number }>): Promise<void> {
+    if (!files || files.length === 0) return
+    const db = await this.init()
+    // Find the latest user message for this session
+    const stmt = db.prepare(
+      "SELECT meta FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1"
+    )
+    stmt.bind([sessionId])
+    if (stmt.step()) {
+      const row = stmt.getAsObject()
+      let meta: Record<string, unknown> = {}
+      try { meta = row.meta ? JSON.parse(row.meta as string) : {} } catch {}
+      meta.files = files
+      db.run("UPDATE messages SET meta = ? WHERE session_id = ? AND role = 'user' AND id = (SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'user')",
+        [JSON.stringify(meta), sessionId, sessionId])
+    }
+    stmt.free()
+    await saveDatabase(this.dbPath)
+  }
+
   async updateTitle(id: string, title: string): Promise<void> {
     const db = await this.init()
     db.run("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?", [

@@ -304,6 +304,19 @@ export default function Home() {
                 artIdx++
               }
             }
+            // Also restore file attachments for user messages
+            for (var fk = 0; fk < msgData.messages.length; fk++) {
+              var rmu = msgData.messages[fk]
+              if (rmu.role === "user" && rmu.meta?.files && Array.isArray(rmu.meta.files)) {
+                // Find matching user message in msgs
+                for (var fu = 0; fu < msgs.length; fu++) {
+                  if (msgs[fu].role === "user" && !msgs[fu].files) {
+                    msgs[fu].files = rmu.meta.files
+                    break
+                  }
+                }
+              }
+            }
           }
         } catch {}
         setMessages(msgs)
@@ -334,7 +347,12 @@ export default function Home() {
               return { id: a.id, type: a.type || "html", title: a.title, content: a.html || "", fileUrl: a.fileUrl || undefined, streaming: false }
             })
           }
-          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, ts: m.timestamp || 0 })
+          // Restore file attachments from persisted meta
+          var files: Array<{ name: string; path: string; size: number }> | undefined
+          if (m.role === "user" && m.meta && m.meta.files && Array.isArray(m.meta.files)) {
+            files = m.meta.files
+          }
+          msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, files: files, ts: m.timestamp || 0 })
         }
         setMessages(msgs)
       }

@@ -184,6 +184,18 @@ app.post("/api/chat", async (c) => {
           data.sessionId = sessionId
           // Auto-save session
           sessionStore.saveMessages(sessionId, event.state.messages).catch(() => {})
+          // Persist file attachments separately (files are not part of agent state)
+          if (body.files && body.files.length > 0) {
+            import("node:fs").then(fs => {
+              const fileInfos = body.files!.map(p => {
+                const name = p.split("/").pop() || p
+                let size = 0
+                try { size = fs.statSync(p).size } catch {}
+                return { name, path: p, size }
+              })
+              sessionStore.attachFiles(sessionId, fileInfos).catch(() => {})
+            })
+          }
           break
         case "query_end":
           data.queryId = event.query.id
