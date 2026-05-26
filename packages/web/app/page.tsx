@@ -30,8 +30,29 @@ function normalizeNewlines(text: string): string {
   return merged.join("\n").replace(/\n{4,}/g, "\n\n\n")
 }
 
+// Sanitize incomplete Markdown during streaming to prevent broken rendering.
+// e.g., unclosed **bold**, `code`, [links](urls, |tables without separators.
+function sanitizeStreamingMarkdown(text: string): string {
+  let s = text
+  // Unclosed bold/italic: **text → **text**
+  if ((s.match(/\*\*/g) || []).length % 2 !== 0) s += "**"
+  if ((s.match(/(?<!\*)\*(?!\*)/g) || []).length % 2 !== 0) s += "*"
+  // Unclosed inline code: `code → `code`
+  if ((s.match(/`/g) || []).length % 2 !== 0) s += "`"
+  // Unclosed link: [text](url → [text](url)
+  const openBracket = (s.match(/\[/g) || []).length
+  const closeBracket = (s.match(/\]/g) || []).length
+  if (openBracket > closeBracket) s += "]"
+  const openParen = (s.match(/\(/g) || []).length
+  const closeParen = (s.match(/\)/g) || []).length
+  if (openParen > closeParen) s += ")"
+  return s
+}
+
 function MarkdownView({ content }: { content: string }) {
-  const normalized = normalizeNewlines(content || "")
+  var normalized = normalizeNewlines(content || "")
+  // During streaming, sanitize unclosed Markdown tokens to prevent broken rendering
+  normalized = sanitizeStreamingMarkdown(normalized)
   let html = ""
   try { html = marked.parse(normalized) as string } catch {}
   return <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
@@ -461,10 +482,15 @@ export default function Home() {
                 newSid = ev.sessionId; activeIdRef.current = ev.sessionId
                 setActiveId(ev.sessionId); loadSessions()
               }
-              if (ev.type === "message_update") {
+               if (ev.type === "message_update") {
                 setAgentPhase("generating")
                 content += ev.delta
+                // Micro-buffer: append short deltas to last text item instead of creating new ones.
+                // DeepSeek V4 emits one-char-per-line deltas; merging them avoids visual flicker.
                 if (items.length > 0 && items[items.length - 1].type === "text") {
+                  updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
+                } else if (ev.delta && ev.delta.length <= 3 && items.length > 0 && items[items.length - 1].type === "text") {
+                  // Short delta → merge with previous text item even if it was already pushed
                   updateLastItem(function(it) { return { ...it, content: it.content + ev.delta } })
                 } else {
                   pushItem({ id: "t" + Date.now(), type: "text", content: ev.delta })
@@ -834,7 +860,7 @@ export default function Home() {
                 <div className="flex items-center gap-2 text-xs max-w-[85%]">
                   {turn.assistants.length > 0 ? (
                     <span>
-                      <span className="text-text-muted/60">{formatTime(turn.assistants[turn.assistants.length - 1].ts)}</span>
+                      {turn.assistants[turn.assistants.length - 1].ts ? <span className="text-text-muted/60">{formatTime(turn.assistants[turn.assistants.length - 1].ts)}</span> : null}
                       {turn.assistants[turn.assistants.length - 1].content ? (
                         <span>
                           <button onClick={function() { copyMessage(turn.assistants[turn.assistants.length - 1].content, turn.assistants[turn.assistants.length - 1].id) }} className="text-text-muted hover:text-text-secondary ml-2">{copiedId === turn.assistants[turn.assistants.length - 1].id ? '✓' : '📋'}</button>
