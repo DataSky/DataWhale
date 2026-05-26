@@ -13,7 +13,10 @@ import type { AgentTool } from "@datawhale/agent"
 let _sessionId = "default"
 
 export function setSessionContext(sessionId: string): void {
-  _sessionId = sessionId
+  if (_sessionId !== sessionId) {
+    _sessionId = sessionId
+    _workspaceInitialized = false  // new session → re-init workspace
+  }
 }
 
 // ─── Artifact emitter (set by app-server so tools can emit artifact events) ──
@@ -121,6 +124,58 @@ let _sandboxId: string | null = null
 const SANDBOX_MAX_AGE_MS = 25 * 60 * 1000 // 25 min (E2B default timeout is 30min)
 const STATE_FILE = `${process.env.HOME || "~"}/.datawhale/sandbox-state.json`
 
+// ─── Session workspace (per-session isolation in sandbox) ─────────────────────
+// Structure: /data_agent/sessions/{sessionId}/outputs/generated/
+const SANDBOX_BASE = "/data_agent"
+let _workspaceInitialized = false
+
+function workspaceDir(): string {
+  return `${SANDBOX_BASE}/sessions/${_sessionId}`
+}
+function outputDir(): string {
+  return `${workspaceDir()}/outputs/generated`
+}
+function uploadDir(): string {
+  return `${workspaceDir()}/upload`
+}
+function tempDir(): string {
+  return `${workspaceDir()}/temp`
+}
+
+async function ensureSessionWorkspace(sandbox: any): Promise<void> {
+  if (_workspaceInitialized) return
+  const code = `
+import os
+base = "${SANDBOX_BASE}"
+dirs = [
+    "${outputDir()}",
+    "${uploadDir()}",
+    "${tempDir()}",
+]
+for d in dirs:
+    os.makedirs(d, exist_ok=True)
+# Create a symlink for backward compatibility so /tmp/agent_output points to the session dir
+link_path = "/tmp/agent_output"
+if not os.path.exists(link_path):
+    try:
+        os.symlink("${outputDir()}", link_path)
+    except:
+        pass  # symlink may already exist or not supported
+print("workspace ready: " + "${outputDir()}")
+`
+  try {
+    const r = await sandbox.runCode(code, { timeoutMs: 5000 })
+    _workspaceInitialized = true
+  } catch (e) {
+    // Non-fatal — workspace creation failed but sandbox still usable
+  }
+}
+
+/** Reset workspace flag when session changes */
+export function resetWorkspace(): void {
+  _workspaceInitialized = false
+}
+
 // Load saved sandboxId from disk
 async function loadSavedSandboxId(): Promise<string | null> {
   try {
@@ -180,6 +235,8 @@ async function getSandbox(): Promise<any> {
         _sandboxCreatedAt = Date.now()
         // Quick health check
         await _sandbox.runCode("1+1")
+        // Ensure workspace is ready (may have been created by previous session)
+        await ensureSessionWorkspace(_sandbox)
         return _sandbox
       } catch {
         // Resume failed — saved sandbox expired or killed, create new
@@ -194,6 +251,9 @@ async function getSandbox(): Promise<any> {
 
     // Auto-mount OSS if configured
     await mountOSSInit(_sandbox)
+
+    // Initialize session workspace directory structure
+    await ensureSessionWorkspace(_sandbox)
 
     // Persist the sandboxId for future sessions
     await saveSandboxId(_sandboxId)
@@ -235,14 +295,17 @@ export async function closeSandbox(): Promise<void> {
 const executePythonTool: AgentTool = {
   name: "execute_python",
   description:
-    "Execute Python code in a secure cloud sandbox (E2B). Supports pandas, numpy, matplotlib, scipy, scikit-learn. " +
-    "Generated images (PNG/JPEG from matplotlib etc.) are stored in the sandbox and reported. " +
-    "The sandbox persists for 30 minutes — you can run multiple code cells and share data between them via the /tmp directory. " +
-    "Always use print() for text output. For matplotlib plots, use plt.savefig('/tmp/plot.png') to save images. " +
-    "⚠️ HTML OUTPUT: The system auto-detects .html files in /tmp/ (e.g., /tmp/dashboard.html) and renders them as interactive artifact cards " +
-    "in the conversation. This supports ANY size HTML — no LLM token limits. Use this for complex dashboards, ECharts visualizations, " +
-    "and data-rich reports. Always write HTML files to /tmp/ directory. Use Python string concatenation instead of embedding raw HTML in code. For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
-    "For persistent storage, write files to /mnt/oss/ (Aliyun OSS bucket — automatically mounted).",
+    "Execute Python code in a secure cloud sandbox (E2B). Your current working directory is your session's " +
+    "output directory — files saved with relative paths (e.g., open('report.html','w')) go there automatically. " +
+    "Supports pandas, numpy, matplotlib, scipy, scikit-learn. " +
+    "The sandbox persists for 30 minutes — you can run multiple code cells and share data between them. " +
+    "Always use print() for text output. For matplotlib plots, use plt.savefig('plot.png') and they'll appear inline. " +
+    "⚠️ HTML OUTPUT: System auto-detects .html files in your working directory and renders them as interactive " +
+    "artifact cards. This supports ANY size HTML — no LLM token limits. " +
+    "For complex dashboards, write HTML to the current directory (relative path). " +
+    "Use Python string concatenation instead of embedding raw HTML in code. " +
+    "For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
+    "For persistent cross-session storage, use /mnt/oss/ (mounted automatically).",
   parameters: {
     type: "object",
     properties: {
@@ -268,12 +331,59 @@ const executePythonTool: AgentTool = {
 
     const sandbox = await getSandbox()
 
-    // Clean up old sandbox files (> 30 min old) to prevent accumulation
+    // Ensure workspace is ready for this session
+    await ensureSessionWorkspace(sandbox)
+
+    // Clean up old session files (older than this session: files with timestamps
+    // before session start are from previous sessions sharing the same sandbox)
+    const NOW = Date.now()
     try {
       await sandbox.runCode(
-        "import os, time; now=time.time(); [os.remove(f'/tmp/{f}') for f in os.listdir('/tmp') if os.path.isfile(f'/tmp/{f}') and now - os.path.getmtime(f'/tmp/{f}') > 1800 and not f.startswith('systemd') and not f.startswith('.')]",
-        { timeoutMs: 5000 }
-      )
+        `import os, time, shutil
+now = time.time()
+# Clean /tmp (backward compat)
+for f in os.listdir('/tmp'):
+    fp = f'/tmp/{f}'
+    if os.path.isfile(fp) and not f.startswith('systemd') and not f.startswith('.'):
+        if now - os.path.getmtime(fp) > 1800:
+            try: os.remove(fp)
+            except: pass
+# Clean other session dirs older than 30 min
+base = '${SANDBOX_BASE}/sessions'
+if os.path.exists(base):
+    for sd in os.listdir(base):
+        sp = os.path.join(base, sd)
+        if os.path.isdir(sp) and sd != '${_sessionId}':
+            try:
+                st = os.stat(sp)
+                if now - st.st_mtime > 1800:
+                    shutil.rmtree(sp, ignore_errors=True)
+            except: pass
+`, { timeoutMs: 5000 })
+    } catch {}
+
+    // Snapshot existing files before execution so we can export only new/changed files
+    let preSnapshot: string[] = []
+    try {
+      const snapshotCode = `
+import os, json
+files = []
+for d in ["${outputDir()}", "/tmp"]:
+    try:
+        for f in os.listdir(d):
+            fp = os.path.join(d, f)
+            if os.path.isfile(fp) and not f.startswith('systemd') and not f.startswith('.'):
+                files.append(fp)
+    except: pass
+print(json.dumps(files))
+`
+      const snapResult = await sandbox.runCode(snapshotCode, { timeoutMs: 5000 })
+      preSnapshot = JSON.parse(((snapResult.logs?.stdout || []) as string[]).join("").trim() || "[]")
+    } catch {}
+
+    // Cd to session output directory so relative paths work naturally
+    try {
+      await sandbox.runCode(`import os; os.chdir("${outputDir()}")`, { timeoutMs: 2000 })
     } catch {}
 
     // Install packages if needed
@@ -309,34 +419,43 @@ const executePythonTool: AgentTool = {
     const ts = Date.now()
 
     try {
-      // List all user files in /tmp (exclude system files)
-      const lsResult = await sandbox.runCode(
-        `import os; [print(f) for f in sorted(os.listdir('/tmp')) if os.path.isfile(f'/tmp/{f}') and not f.startswith('systemd') and not f.startswith('.') and not f.startswith('tmp')]`,
-        { timeoutMs: 5000 }
-      )
-      const tmpList = ((lsResult.logs?.stdout || []) as string[])
-        .join("")
-        .trim()
-        .split("\n")
-        .filter(Boolean)
+      const fs = await import("node:fs")
+      const pathMod = await import("node:path")
+      if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true })
 
-      if (tmpList.length > 0) {
-        const fs = await import("node:fs")
-        const pathMod = await import("node:path")
-        if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true })
+      // Scan session workspace directory (primary) + /tmp (backward compat)
+      // Only export files created/changed during this execution (delta from pre-snapshot)
+      const preSnapshotSet = new Set(preSnapshot)
+      const scanPaths = [
+        { sandboxDir: outputDir(), source: "workspace" },
+        { sandboxDir: "/tmp", source: "tmp" },
+      ]
 
-        for (let i = 0; i < tmpList.length; i++) {
-          try {
-            const fname = tmpList[i]
-            const sandboxPath = `/tmp/${fname}`
-            // Add timestamp prefix to avoid intra-session name collisions
-            const localName = `${ts}_${i + 1}_${fname}`
-            const localPath = pathMod.join(exportDir, localName)
-            const bytes = await sandbox.files.read(sandboxPath, { format: "bytes" })
-            fs.writeFileSync(localPath, Buffer.from(bytes))
-            savedFiles.push(localPath)
-          } catch {}
-        }
+      let fileIndex = 0
+      for (const sp of scanPaths) {
+        try {
+          const lsCode = `import os; [print(f) for f in sorted(os.listdir("${sp.sandboxDir}")) if os.path.isfile(os.path.join("${sp.sandboxDir}", f)) and not f.startswith('systemd') and not f.startswith('.') and not f.startswith('tmp')]`
+          const lsResult = await sandbox.runCode(lsCode, { timeoutMs: 5000 })
+          const fileList = ((lsResult.logs?.stdout || []) as string[])
+            .join("")
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+
+          for (const fname of fileList) {
+            const sandboxPath = `${sp.sandboxDir}/${fname}`
+            // Skip files that existed before this execution (not delta)
+            if (preSnapshotSet.has(sandboxPath)) continue
+            try {
+              const localName = `${ts}_${fileIndex + 1}_${fname}`
+              fileIndex++
+              const localPath = pathMod.join(exportDir, localName)
+              const bytes = await sandbox.files.read(sandboxPath, { format: "bytes" })
+              fs.writeFileSync(localPath, Buffer.from(bytes))
+              savedFiles.push(localPath)
+            } catch {}
+          }
+        } catch {}
       }
     } catch {}
 
@@ -396,19 +515,38 @@ const executePythonTool: AgentTool = {
       output += `\n⚠️ HTML file mentioned in output but not found in /tmp/. Ensure files are saved to /tmp/ directory.`
     }
 
-    // Sandbox workspace file index
+    // Sandbox workspace file index — show session directory structure
     try {
       const sandbox = await getSandbox()
-      const lsResult = await sandbox.runCode(
-        "import os; [print(f'{f} ({os.path.getsize(os.path.join(\"/tmp\",f))} bytes)') for f in sorted(os.listdir('/tmp')) if os.path.isfile(os.path.join('/tmp',f)) and not f.startswith('systemd') and not f.startswith('.')]",
-        { timeoutMs: 5000 }
-      )
+      const lsCode = `
+import os
+out_dir = "${outputDir()}"
+tmp_dir = "/tmp"
+lines = []
+# Session workspace
+if os.path.exists(out_dir):
+    for f in sorted(os.listdir(out_dir)):
+        fp = os.path.join(out_dir, f)
+        if os.path.isfile(fp):
+            sz = os.path.getsize(fp)
+            lines.append(f"workspace/{f} ({sz} bytes)")
+# /tmp (backward compat, exclude system files)
+for f in sorted(os.listdir(tmp_dir)):
+    fp = os.path.join(tmp_dir, f)
+    if os.path.isfile(fp) and not f.startswith('systemd') and not f.startswith('.'):
+        sz = os.path.getsize(fp)
+        lines.append(f"/tmp/{f} ({sz} bytes)")
+for l in lines[:15]:
+    print(l)
+if len(lines) > 15:
+    print(f"... and {len(lines)-15} more")
+`
+      const lsResult = await sandbox.runCode(lsCode, { timeoutMs: 5000 })
       const stdout = ((lsResult.logs?.stdout || []) as string[]).join("").trim()
       if (stdout) {
         const lines = stdout.split("\n").filter(Boolean)
         output += `\n📁 Sandbox workspace files (${lines.length}):\n`
-        for (const line of lines.slice(0, 10)) output += `  → /tmp/${line}\n`
-        if (lines.length > 10) output += `  ... and ${lines.length - 10} more\n`
+        for (const line of lines) output += `  → ${line}\n`
       }
     } catch {}
 
@@ -421,20 +559,24 @@ const executePythonTool: AgentTool = {
 const sandboxDownloadTool: AgentTool = {
   name: "sandbox_download",
   description:
-    "Download a file from the E2B sandbox to your local machine. Use this when Python generated CSV, JSON, Excel, or other data files that you want to access locally. Files are saved to ~/.datawhale/plots/.",
+    "Download a file from the sandbox session workspace. Use this when Python generated CSV, JSON, Excel, or other data files. Files are saved to ~/.datawhale/plots/{session}/.",
   parameters: {
     type: "object",
     properties: {
       path: {
         type: "string",
-        description: "Full path to the file in the sandbox (e.g., /tmp/results.csv)",
+        description: "Path to the file in the sandbox. Relative paths resolve to your session output directory (e.g., 'results.csv' or 'report.html'). Absolute paths also work (e.g., '/tmp/data.csv').",
       },
     },
     required: ["path"],
   },
   executionMode: "sequential",
   execute: async (_id, params) => {
-    const filePath = params.path as string
+    let filePath = params.path as string
+    // Resolve relative paths to session output directory
+    if (!filePath.startsWith("/")) {
+      filePath = `${outputDir()}/${filePath}`
+    }
     const sb = await getSandbox()
 
     // Read as bytes — works for all file types
@@ -597,7 +739,9 @@ async function mountOSSInit(sandbox: any): Promise<void> {
 const mountOSSTool: AgentTool = {
   name: "sandbox_mount_oss",
   description:
-    "Mount Aliyun OSS bucket to /mnt/oss in the sandbox. Data written to /mnt/oss is persisted to OSS. Use this for long-term file storage or sharing data between sessions.",
+    "Mount Aliyun OSS bucket to the sandbox session directory for persistent storage. " +
+    "Data written to the oss mount is persisted and shared between sessions. " +
+    "The mount path is available in your session workspace.",
   parameters: {
     type: "object",
     properties: {},
@@ -631,7 +775,8 @@ const mountOSSTool: AgentTool = {
 const listWorkspaceFilesTool: AgentTool = {
   name: "list_workspace_files",
   description:
-    "List files in the sandbox workspace (/tmp). Use to discover CSV/JSON/images from previous execute_python runs. Avoids redundant SQL queries — if full data is saved to sandbox, analyze it directly with execute_python instead of re-running queries.",
+    "List files in the session workspace. Your output files (HTML, CSV, images etc.) are in the session directory " +
+    "which is also your current working directory. Use to discover files from previous execute_python runs.",
   parameters: {
     type: "object",
     properties: {
@@ -647,17 +792,32 @@ const listWorkspaceFilesTool: AgentTool = {
     const pattern = (params.pattern as string) || ""
     try {
       const sb = await getSandbox()
-      const code = pattern
-        ? "import os; [print(f + ' (' + str(os.path.getsize('/tmp/'+f)) + ' bytes)') for f in sorted(os.listdir('/tmp')) if os.path.isfile('/tmp/'+f) and '" + pattern + "' in f.lower() and not f.startswith('systemd') and not f.startswith('.')]"
-        : "import os; [print(f + ' (' + str(os.path.getsize('/tmp/'+f)) + ' bytes)') for f in sorted(os.listdir('/tmp')) if os.path.isfile('/tmp/'+f) and not f.startswith('systemd') and not f.startswith('.')]"
+      const code = `
+import os
+base = "${outputDir()}"
+tmp = "/tmp"
+results = []
+for d, label in [(base, "workspace"), (tmp, "/tmp")]:
+    try:
+        for f in sorted(os.listdir(d)):
+            fp = os.path.join(d, f)
+            if os.path.isfile(fp) and not f.startswith('systemd') and not f.startswith('.') and not f.startswith('tmp'):
+                ${pattern ? `if "${pattern}".lower() in f.lower():` : ""}
+                sz = os.path.getsize(fp)
+                results.append(f"{label}/{f} ({sz} bytes)")
+    except: pass
+for r in results[:25]:
+    print(r)
+if len(results) > 25:
+    print(f"... and {len(results)-25} more")
+`
       const lsResult = await sb.runCode(code, { timeoutMs: 5000 })
       const stdout = ((lsResult.logs?.stdout || []) as string[]).join("").trim()
-      if (!stdout || stdout === "[]") return { content: "No files found in sandbox workspace (/tmp)." }
+      if (!stdout) return { content: "No files found in session workspace." }
       const lines = stdout.split("\n").filter(Boolean)
-      let output = `${pattern ? "Matching" : "Sandbox workspace"} files (${lines.length}):\n`
-      for (const line of lines.slice(0, 20)) output += `  → /tmp/${line}\n`
-      if (lines.length > 20) output += `  ... and ${lines.length - 20} more\n`
-      output += `\nAccess with execute_python: pd.read_csv('/tmp/filename.csv')`
+      let output = `${pattern ? "Matching" : "Session workspace"} files:\n`
+      for (const line of lines) output += `  → ${line}\n`
+      output += `\nYour working directory is the session output dir. Use relative paths: open("filename.html","w")`
       return { content: output }
     } catch (e: any) {
       return { content: `Failed to list sandbox files: ${e?.message || e}` }
