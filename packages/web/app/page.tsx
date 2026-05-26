@@ -153,7 +153,7 @@ async function fetchJSON(url: string, init?: RequestInit) {
   return res.json()
 }
 
-interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number; artifacts?: ArtifactData[] }
+interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number; artifacts?: ArtifactData[]; files?: { name: string; path: string; size: number }[] }
 
 // Ordered stream items for correct interleaving of thinking/tools/text
 interface StreamItem {
@@ -385,9 +385,14 @@ export default function Home() {
   }, [handleFileUpload])
 
   const _send = useCallback(async (overrideText?: string) => {
-    const text = (overrideText || input).trim(); if (!text || streaming) return
+    const text = (overrideText || input).trim()
+    // Allow sending with only files (no text) — but still need at least text or files
+    if ((!text && uploadedFiles.length === 0) || streaming) return
     setInput(""); setEditingMsgId(null)
-    const userMsg: Msg = { id: "m" + Date.now(), role: "user", content: text, ts: Date.now() }
+    // Snapshot uploaded files so they appear in the user message, then clear the input tray
+    const attachedFiles = uploadedFiles.length > 0 ? uploadedFiles.map(function(f) { return { name: f.name, path: f.path, size: f.size } }) : undefined
+    const userMsg: Msg = { id: "m" + Date.now(), role: "user", content: text, ts: Date.now(), files: attachedFiles }
+    if (uploadedFiles.length > 0) setUploadedFiles([])
     const newMsgs = [...messages, userMsg]; setMessages(newMsgs)
     setStreaming(true); setStreamItems([])
     const ac = new AbortController(); abortControllerRef.current = ac
@@ -650,7 +655,25 @@ export default function Home() {
                           <button onClick={function() { setEditingMsgId(null) }} className="px-3 py-1 bg-bg-tertiary text-text-secondary rounded text-xs">Cancel</button>
                         </div>
                       ) : (
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap">{turn.user.content}</div>
+                        <div>
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap">{turn.user.content}</div>
+                          {turn.user.files && turn.user.files.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-white/10">
+                              {turn.user.files.map(function(f) {
+                                var isCsv = f.name.endsWith(".csv"), isJson = f.name.endsWith(".json")
+                                var icon = isCsv ? "📊" : isJson ? "📋" : "📄"
+                                return (
+                                  <a key={f.name} href={`/api/uploads/${f.name}`} download
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white/80 transition-colors no-underline">
+                                    <span>{icon}</span>
+                                    <span className="max-w-[120px] truncate">{f.name}</span>
+                                    <span className="text-white/40">↓</span>
+                                  </a>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
                       )}
                     </div>
                     <div className="flex gap-2 text-xs mt-1">
@@ -852,7 +875,7 @@ export default function Home() {
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="10" height="10" rx="1" /></svg>
                   </button>
                 ) : (
-                  <button onClick={send} disabled={!input.trim()}
+                  <button onClick={send} disabled={!input.trim() && uploadedFiles.length === 0}
                     className="w-8 h-8 flex items-center justify-center rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                     title="Send (Enter)">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

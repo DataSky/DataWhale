@@ -308,6 +308,23 @@ app.get("/api/files/:sessionId/:filename", async (c) => {
   })
 })
 
+// Download uploaded files (CSV/JSON attachments)
+app.get("/api/uploads/:filename", async (c) => {
+  const filename = c.req.param("filename")
+  const uploadDir = `${process.env.HOME || "~"}/.datawhale/uploads`
+  const filePath = `${uploadDir}/${filename}`
+  const file = Bun.file(filePath)
+  if (!(await file.exists())) return c.json({ error: "not found" }, 404)
+  const ext = filename.split(".").pop()?.toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    csv: "text/csv", json: "application/json", md: "text/markdown",
+    html: "text/html", htm: "text/html",
+  }
+  return new Response(file, {
+    headers: { "Content-Type": mimeTypes[ext || ""] || "application/octet-stream" }
+  })
+})
+
 app.post("/api/upload", async (c) => {
   const formData = await c.req.formData()
   const file = formData.get("file") as File | null
