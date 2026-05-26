@@ -276,9 +276,10 @@ export default function Home() {
     }
     // If streaming, append a virtual assistant message so content appears
     // in the same position as the final message — no jump, no flash.
+    // Give it a stable id so React can reconcile it with the real message later.
     if (streaming && streamItems.length > 0) {
       if (!current) current = { user: null, assistants: [] }
-      current.assistants.push({ _streaming: true })
+      current.assistants.push({ _streaming: true, id: "_streaming" })
       current._hasStreaming = true
     }
     if (current) result.push(current)
