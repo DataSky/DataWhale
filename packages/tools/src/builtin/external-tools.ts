@@ -235,7 +235,14 @@ export async function closeSandbox(): Promise<void> {
 const executePythonTool: AgentTool = {
   name: "execute_python",
   description:
-    "Execute Python code in a secure cloud sandbox (E2B). Supports pandas, numpy, matplotlib, scipy, scikit-learn. Generated images (PNG/JPEG from matplotlib etc.) are stored in the sandbox and reported. The sandbox persists for 30 minutes — you can run multiple code cells and share data between them via the /tmp directory. Always use print() for text output. For matplotlib plots, use plt.savefig('/tmp/plot.png') to save images. For persistent storage, write files to /mnt/oss/ (Aliyun OSS bucket — automatically mounted).",
+    "Execute Python code in a secure cloud sandbox (E2B). Supports pandas, numpy, matplotlib, scipy, scikit-learn. " +
+    "Generated images (PNG/JPEG from matplotlib etc.) are stored in the sandbox and reported. " +
+    "The sandbox persists for 30 minutes — you can run multiple code cells and share data between them via the /tmp directory. " +
+    "Always use print() for text output. For matplotlib plots, use plt.savefig('/tmp/plot.png') to save images. " +
+    "⚠️ HTML OUTPUT: The system auto-detects .html files in /tmp/ (e.g., /tmp/dashboard.html) and renders them as interactive artifact cards " +
+    "in the conversation. This supports ANY size HTML — no LLM token limits. Use this for complex dashboards, ECharts visualizations, " +
+    "and data-rich reports. Always write HTML files to /tmp/ directory. " +
+    "For persistent storage, write files to /mnt/oss/ (Aliyun OSS bucket — automatically mounted).",
   parameters: {
     type: "object",
     properties: {
@@ -382,6 +389,13 @@ const executePythonTool: AgentTool = {
       }
     }
 
+    // Warn if stdout mentions HTML/dashboard/report but no .html files were exported
+    const stdoutLower = stdout.toLowerCase()
+    if ((stdoutLower.includes("html") || stdoutLower.includes("dashboard") || stdoutLower.includes("report"))
+        && !savedFiles.some(f => /\.html?$/i.test(f))) {
+      output += `\n⚠️ HTML file mentioned in output but not found in /tmp/. Ensure files are saved to /tmp/ directory.`
+    }
+
     // Sandbox workspace file index
     try {
       const sandbox = await getSandbox()
@@ -503,11 +517,12 @@ const readLocalFileTool: AgentTool = {
 const generateHtmlTool: AgentTool = {
   name: "generate_html",
   description:
-    "Generate an interactive HTML artifact and stream it to the frontend. " +
+    "Generate a small interactive HTML artifact and stream it to the frontend. " +
     "The HTML will appear as an embedded card in the conversation that the user " +
     "can expand to fullscreen or open in a separate tab. " +
-    "Use this for dashboards, interactive charts (ECharts/Plotly), data tables, " +
-    "or any rich content that goes beyond plain markdown. " +
+    "⚠️ TOKEN LIMIT: Only use this for HTML under ~2500 characters — the HTML is sent as a tool parameter " +
+    "and limited by LLM output tokens. For larger HTML (dashboards, complex charts, data-heavy reports), " +
+    "use execute_python to write the file to /tmp/xxx.html instead — it has no size limit and auto-renders. " +
     "Include complete <style> and <script> tags — the HTML runs in a sandboxed iframe. " +
     "For charts, prefer using ECharts (CDN: https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js).",
   parameters: {

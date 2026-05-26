@@ -418,8 +418,12 @@ export default function Home() {
             var line = lines[li]; if (!line.startsWith("data: ")) continue
             try {
               var ev = JSON.parse(line.slice(6))
-              // Update sessionId from ANY event that carries it
-              if (ev.sessionId && !newSid) { newSid = ev.sessionId; activeIdRef.current = ev.sessionId }
+              // Update sessionId & immediately refresh sidebar so the new session
+              // appears without waiting for the full response to complete.
+              if (ev.sessionId && !newSid) {
+                newSid = ev.sessionId; activeIdRef.current = ev.sessionId
+                setActiveId(ev.sessionId); loadSessions()
+              }
               if (ev.type === "message_update") {
                 setAgentPhase("generating")
                 content += ev.delta

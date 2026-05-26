@@ -434,7 +434,9 @@ const SYSTEM_PROMPT = `CURRENT DATE: ${dateStr} | TIME: ${timeStr} CST (UTC+8) |
 - query 返回 > 100 行时只给摘要，不逐行输出
 - 深入分析用 execute_python + pd.read_csv，不重新 query
 - 先 list_workspace_files 检查沙箱是否有数据
-- 结论+图表优先，不返回原始数据`
+- 结论+图表优先，不返回原始数据
+- HTML 仪表盘/报告：优先用 execute_python 写入 /tmp/xxx.html（无大小限制，自动渲染为卡片）
+- 仅 <2000 字符的小 HTML 使用 generate_html 工具`
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
