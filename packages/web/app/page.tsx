@@ -841,8 +841,8 @@ export default function Home() {
                 <button onClick={function() { fileInputRef.current?.click() }}
                   className="w-8 h-8 flex items-center justify-center rounded-lg text-text-muted/60 hover:text-accent hover:bg-accent/10 transition-colors"
                   title="Attach file (CSV/JSON)">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M8 2v10M4 6l4-4 4 4M2 13h12" />
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5.5 4.5c-.6.6-1 1.4-1 2.3v4.4a3 3 0 0 0 6 0V6.5a2 2 0 0 0-4 0v4a1 1 0 0 0 2 0V5" />
                   </svg>
                 </button>
                 {streaming ? (
