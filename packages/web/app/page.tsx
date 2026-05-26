@@ -740,6 +740,25 @@ export default function Home() {
                                 }
                                 return <MarkdownView key={item.id} content={item.content} />
                               })}
+                              {/* Session assets — inside last assistant bubble */}
+                              {ti === turns.length - 1 && isLastInTurn && messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).length > 0 ? (
+                                <div className="mt-3 pt-3 border-t border-border/50">
+                                  <p className="text-xs text-text-muted/60 mb-1.5">📦 Session Assets</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).map(function(m) {
+                                      return m.artifacts!.map(function(a) {
+                                        return (
+                                          <span key={a.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-bg-tertiary text-xs text-text-muted">
+                                            <span>📄</span>
+                                            <span className="max-w-[120px] truncate">{a.title || "HTML"}</span>
+                                            <a href={a.fileUrl || "#"} target="_blank" className="text-text-muted/50 hover:text-accent">🔗</a>
+                                          </span>
+                                        )
+                                      })
+                                    })}
+                                  </div>
+                                </div>
+                              ) : null}
                               {/* Separator between ReAct steps */}
                               {!isLastInTurn ? <div className="border-t border-border my-3" /> : null}
                             </div>
@@ -795,6 +814,25 @@ export default function Home() {
                               {msg.artifacts.map(function(a) {
                                 return <ArtifactCard key={a.id} artifact={a} onFullscreen={function() { setFullscreenArtifact(a) }} />
                               })}
+                            </div>
+                          ) : null}
+                          {/* Session assets — inside last assistant bubble */}
+                          {ti === turns.length - 1 && isLastInTurn && messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).length > 0 ? (
+                            <div className="mt-3 pt-3 border-t border-border/50">
+                              <p className="text-xs text-text-muted/60 mb-1.5">📦 Session Assets</p>
+                              <div className="flex flex-wrap gap-1">
+                                {messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).map(function(m) {
+                                  return m.artifacts!.map(function(a) {
+                                    return (
+                                      <span key={a.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-bg-tertiary text-xs text-text-muted">
+                                        <span>📄</span>
+                                        <span className="max-w-[120px] truncate">{a.title || "HTML"}</span>
+                                        <a href={a.fileUrl || "#"} target="_blank" className="text-text-muted/50 hover:text-accent">🔗</a>
+                                      </span>
+                                    )
+                                  })
+                                })}
+                              </div>
                             </div>
                           ) : null}
                           {/* Separator between ReAct steps */}
@@ -880,29 +918,6 @@ export default function Home() {
           </div>
 
         </div>
-
-        {/* Session assets — compact summary of generated HTML reports */}
-        {messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).length > 0 ? (
-          <div className="border-t border-border px-4 py-2 bg-bg-secondary/50">
-            <div className="max-w-3xl mx-auto">
-              <p className="text-xs text-text-muted font-medium mb-1.5">📦 Session Assets</p>
-              <div className="flex flex-wrap gap-1.5">
-                {messages.filter(function(m) { return m.artifacts && m.artifacts.length > 0 }).map(function(m) {
-                  return m.artifacts!.map(function(a) {
-                    return (
-                      <div key={a.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg-secondary border border-border/60 text-xs text-text-secondary">
-                        <span>📄</span>
-                        <span className="max-w-[160px] truncate font-medium">{a.title || "HTML Report"}</span>
-                        <a href={a.fileUrl || "#"} target="_blank" className="text-text-muted hover:text-accent ml-1" title="Open">🔗</a>
-                        <button onClick={function() { setFullscreenArtifact(a) }} className="text-text-muted hover:text-accent" title="Preview">⛶</button>
-                      </div>
-                    )
-                  })
-                })}
-              </div>
-            </div>
-          </div>
-        ) : null}
 
         {/* Agent Status Bar — fixed above input, never scrolls away */}
         <div className="border-t border-border px-4 py-1.5 bg-bg-secondary/90">
