@@ -292,26 +292,33 @@ export async function closeSandbox(): Promise<void> {
   await clearSandboxId()
 }
 
-const executePythonTool: AgentTool = {
-  name: "execute_python",
+const sandboxExecTool: AgentTool = {
+  name: "sandbox_exec",
   description:
-    "Execute Python code in a secure cloud sandbox (E2B). Your current working directory is your session's " +
-    "output directory — files saved with relative paths (e.g., open('report.html','w')) go there automatically. " +
-    "Supports pandas, numpy, matplotlib, scipy, scikit-learn. " +
-    "The sandbox persists for 30 minutes — you can run multiple code cells and share data between them. " +
-    "Always use print() for text output. For matplotlib plots, use plt.savefig('plot.png') and they'll appear inline. " +
+    "Execute code in a secure cloud sandbox (E2B). Two execution modes available:\n" +
+    "• python (default): Python 3 with pandas, numpy, matplotlib, scipy, scikit-learn pre-installed.\n" +
+    "• bash: Shell commands (apt-get, pip, file ops, etc.) — runs in the session workspace.\n" +
+    "Your current working directory is your session's output directory — files saved with " +
+    "relative paths (e.g., open('report.html','w')) go there automatically. " +
+    "The sandbox persists for 30 minutes — you can run multiple cells and share data between them. " +
+    "Always use print() for Python text output. For matplotlib plots, use plt.savefig('plot.png'). " +
     "⚠️ HTML OUTPUT: System auto-detects .html files in your working directory and renders them as " +
     "interactive artifact cards. This is the ONLY way to generate HTML — use it for all dashboards, " +
-    "charts, and reports (no size limit). Always write HTML with relative paths (e.g., open('report.html','w')). " +
+    "charts, and reports (no size limit). Always write HTML with relative paths. " +
     "Use Python string concatenation instead of embedding raw HTML in code. " +
     "For ECharts, use CDN: cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js " +
     "For persistent cross-session storage, use /mnt/oss/ (mounted automatically).",
   parameters: {
     type: "object",
     properties: {
+      execution_type: {
+        type: "string",
+        description: "Execution mode: 'python' (default) or 'bash' (shell commands)",
+        enum: ["python", "bash"],
+      },
       code: {
         type: "string",
-        description: "Python source code to execute. Always use print() for output you want to see.",
+        description: "Code to execute. Python: source code (use print() for output). Bash: shell command.",
       },
       timeout: {
         type: "number",
@@ -319,13 +326,14 @@ const executePythonTool: AgentTool = {
       },
       install_packages: {
         type: "string",
-        description: "Comma-separated list of pip packages to install before running (optional, e.g. 'seaborn,scipy')",
+        description: "(python only) Comma-separated pip packages to install before running (e.g., 'seaborn,scipy')",
       },
     },
     required: ["code"],
   },
   executionMode: "sequential",
   execute: async (_id, params) => {
+    const execType = (params.execution_type as string) || "python"
     const code = params.code as string
     const timeout = Math.min((params.timeout as number) || 60, 300)
 
@@ -333,6 +341,30 @@ const executePythonTool: AgentTool = {
 
     // Ensure workspace is ready for this session
     await ensureSessionWorkspace(sandbox)
+
+    // ── Bash mode: execute via commands.run ──
+    if (execType === "bash") {
+      try {
+        const result = await sandbox.commands.run(code, {
+          timeoutMs: timeout * 1000,
+          onStdout: () => {},
+          onStderr: () => {},
+        })
+        const stdout = result?.stdout || ""
+        const stderr = result?.stderr || ""
+        const exitCode = result?.exitCode
+        let output = ""
+        if (stdout.trim()) output += `stdout:\n${stdout.trim()}\n`
+        if (stderr.trim()) output += `stderr:\n${stderr.trim()}\n`
+        if (exitCode !== 0) output += `exit code: ${exitCode}\n`
+        if (!output) output = "(no output)"
+        return { content: output, details: { executionType: "bash", exitCode } }
+      } catch (e: any) {
+        return { content: `bash error: ${e?.message || e}`, details: { executionType: "bash", error: e?.message } }
+      }
+    }
+
+    // ── Python mode: existing logic ──
 
     // Clean up old session files (older than this session: files with timestamps
     // before session start are from previous sessions sharing the same sandbox)
@@ -606,9 +638,9 @@ const readLocalFileTool: AgentTool = {
   name: "read_local_file",
   description:
     "Read a previously-exported file from the local plots directory (~/.datawhale/plots/). " +
-    "Use this when you need to re-read a file that was generated in a previous execute_python call " +
+    "Use this when you need to re-read a file that was generated in a previous sandbox_exec call " +
     "(e.g., report.md, results.csv). The sessionId is automatically provided. " +
-    "All files exported by execute_python are stored under ~/.datawhale/plots/{sessionId}/.",
+    "All files exported by sandbox_exec are stored under ~/.datawhale/plots/{sessionId}/.",
   parameters: {
     type: "object",
     properties: {
@@ -726,7 +758,7 @@ const listWorkspaceFilesTool: AgentTool = {
   name: "list_workspace_files",
   description:
     "List files in the session workspace. Your output files (HTML, CSV, images etc.) are in the session directory " +
-    "which is also your current working directory. Use to discover files from previous execute_python runs.",
+    "which is also your current working directory. Use to discover files from previous sandbox_exec runs.",
   parameters: {
     type: "object",
     properties: {
@@ -778,9 +810,10 @@ if len(results) > 25:
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export const ExternalTools = {
-  all: [webSearchTool, executePythonTool, sandboxDownloadTool, readLocalFileTool, mountOSSTool] as AgentTool[],
+  all: [webSearchTool, sandboxExecTool, sandboxDownloadTool, readLocalFileTool, mountOSSTool] as AgentTool[],
   webSearch: webSearchTool,
-  executePython: executePythonTool,
+  sandboxExec: sandboxExecTool,
+  executePython: sandboxExecTool,  // backward compat alias
   listWorkspaceFiles: listWorkspaceFilesTool,
   sandboxDownload: sandboxDownloadTool,
   readLocalFile: readLocalFileTool,
