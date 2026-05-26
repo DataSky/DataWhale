@@ -310,9 +310,10 @@ export default function Home() {
           if (m.role === "user" && m.meta && m.meta.files && Array.isArray(m.meta.files)) {
             files = m.meta.files
           }
-          // Rebuild _streamItems for interleaved rendering (thinking → tools → text → artifacts)
+           // Rebuild _streamItems for interleaved rendering (thinking → tools → text)
+          // Messages with artifacts skip stream — rendered cleanly via grouped layout
           var streamItems: StreamItem[] | undefined
-          if (m.role === "assistant") {
+          if (m.role === "assistant" && !artifacts) {
             var sitems: StreamItem[] = []
             if (m.thinking) sitems.push({ id: "rt" + i, type: "thinking", content: m.thinking })
             if (tools && tools.length > 0) {
@@ -321,7 +322,6 @@ export default function Home() {
               }
             }
             if (c) sitems.push({ id: "rt" + i + "c", type: "text", content: c })
-            // Artifacts render via msg.artifacts — do not duplicate in stream
             if (sitems.length > 0) streamItems = sitems
           }
           msgs.push({ id: "m" + i, role: m.role === "user" ? "user" : "assistant", content: c, thinking: m.thinking || undefined, tools: tools, artifacts: artifacts, files: files, _streamItems: streamItems, ts: m.timestamp || 0 })
