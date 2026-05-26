@@ -108,7 +108,7 @@ app.post("/api/chat", async (c) => {
     ],
     maxTurns: 30,
     temperature: 0.7,
-    maxTokens: 4096,
+    maxTokens: 8192,
   })
 
   // Wire artifact emitter — tools emit artifact events that the SSE loop forwards
