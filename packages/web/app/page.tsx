@@ -274,17 +274,9 @@ export default function Home() {
         current.assistants.push(m)
       }
     }
-    // If streaming, append a virtual assistant message so content appears
-    // in the same position as the final message — no jump, no flash.
-    // Give it a stable id so React can reconcile it with the real message later.
-    if (streaming && streamItems.length > 0) {
-      if (!current) current = { user: null, assistants: [] }
-      current.assistants.push({ _streaming: true, id: "_streaming" })
-      current._hasStreaming = true
-    }
     if (current) result.push(current)
     return result
-  }, [messages, streaming, streamItems])
+  }, [messages])
 
   const selectSession = useCallback(async (id: string) => {
     setActiveId(id)
@@ -567,9 +559,8 @@ export default function Home() {
         }
       }
       setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined }])
-      // Streaming content already rendered inline in the same position as the final message.
-      // Just stop streaming — no need to clear streamItems immediately (next send() will clear).
-      setStreaming(false)
+      // Streaming region disappears immediately; assistant message appears via turns with stable keys.
+      setStreamItems([]); setStreaming(false)
       abortControllerRef.current = null
       if (newSid) setActiveId(newSid); loadSessions()
     } catch (err: any) {
@@ -585,7 +576,7 @@ export default function Home() {
       } else {
         setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now(), artifacts: errArtifacts.length > 0 ? errArtifacts : undefined }])
       }
-      setStreaming(false)
+      setStreamItems([]); setStreaming(false)
       abortControllerRef.current = null
     }
   }, [input, streaming, messages, selectedModel, uploadedFiles, loadSessions])
@@ -745,60 +736,9 @@ export default function Home() {
                 {/* Assistant group in turn */}
                  {turn.assistants.length > 0 ? (
                    <div className="msg-enter max-w-[85%] bg-bg-secondary rounded-2xl rounded-bl-md px-4 py-3">
-                     {turn.assistants.map(function(msg, ai) {
-                       var isLastInTurn = ai === turn.assistants.length - 1
-                       // Streaming virtual message → render streamItems inline
-                       if (msg._streaming) {
-                         return (
-                           <div key="_streaming" className="space-y-1.5">
-                             {streamItems.length === 0 ? (
-                               <div className="flex gap-1.5 py-2"><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} /></div>
-                             ) : null}
-                             {streamItems.map(function(item) {
-                               if (item.type === "thinking") {
-                                 return (
-                                   <details key={item.id} open>
-                                     <summary className="text-xs text-text-muted cursor-pointer select-none flex items-center gap-1.5"><span className="text-[10px]">▾</span><span>Thinking…</span></summary>
-                                     <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{item.content}</div>
-                                   </details>
-                                 )
-                               }
-                               if (item.type === "artifact") {
-                                 var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, fileUrl: item.artifactFileUrl, streaming: item.artifactStreaming || false }
-                                 return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
-                               }
-                               if (item.type === "tool") {
-                                 var hasDetail = item.content && item.content.length > 10
-                                 var isExpanded = expandedTools[item.id] || false
-                                 var toolElapsed = ""
-                                 if (item.toolStatus === "running" && item.toolStartedAt) {
-                                   toolElapsed = ((Date.now() - item.toolStartedAt) / 1000).toFixed(1) + "s"
-                                 }
-                                 return (
-                                   <div key={item.id} className="text-xs">
-                                     <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors"
-                                       onClick={function() { setExpandedTools(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[item.id] = !p[item.id]; return n }) }}>
-                                       <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning" + " shrink-0"}>
-                                         {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
-                                       </span>
-                                       <span className="text-text-secondary font-medium shrink-0">{item.toolName}</span>
-                                       {item.toolStatus === "running" && toolElapsed ? <span className="text-text-muted/60 shrink-0">{toolElapsed}</span> : null}
-                                       {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate min-w-0">{item.content.slice(0, 80)}</span> : null}
-                                       {hasDetail && item.toolStatus === "done" ? <span className="text-text-muted shrink-0 ml-auto text-[10px]">{isExpanded ? "▾" : "▸"}</span> : null}
-                                     </div>
-                                     {hasDetail && isExpanded && (
-                                       <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed" style={{maxHeight: "16rem", overflowY: "auto"}}>{item.content}</div>
-                                     )}
-                                   </div>
-                                 )
-                               }
-                               return <MarkdownView key={item.id} content={item.content} />
-                             })}
-                             {streamItems.length > 0 && streamItems[streamItems.length - 1].type === "text" ? <span className="typing-cursor" /> : null}
-                           </div>
-                         )
-                       }
-                       return (
+                      {turn.assistants.map(function(msg, ai) {
+                        var isLastInTurn = ai === turn.assistants.length - 1
+                        return (
                          <div key={msg.id}>
                           {/* Thinking */}
                           {msg.thinking ? (
@@ -875,6 +815,62 @@ export default function Home() {
               </div>
             )
           })}
+
+          {/* Streaming — fixed key, stable DOM; renders inline with message list */}
+          {streaming ? (
+            <div key="streaming-container" className="space-y-2">
+              <div className="msg-enter flex justify-start">
+                <div className="max-w-[85%] min-w-0 bg-bg-secondary rounded-2xl rounded-bl-md px-4 py-3 space-y-1.5">
+                  {streamItems.length === 0 ? (
+                    <div className="flex gap-1.5 py-2"><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} /><div className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} /></div>
+                  ) : null}
+                  {streamItems.map(function(item) {
+                    if (item.type === "thinking") {
+                      return (
+                        <details key={item.id} open>
+                          <summary className="text-xs text-text-muted cursor-pointer select-none flex items-center gap-1.5"><span className="text-[10px]">▾</span><span>Thinking…</span></summary>
+                          <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{item.content}</div>
+                        </details>
+                      )
+                    }
+                    if (item.type === "artifact") {
+                      var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, fileUrl: item.artifactFileUrl, streaming: item.artifactStreaming || false }
+                      return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
+                    }
+                    if (item.type === "tool") {
+                      var hasDetail = item.content && item.content.length > 10
+                      var isExpanded = expandedTools[item.id] || false
+                      var toolElapsed = ""
+                      if (item.toolStatus === "running" && item.toolStartedAt) {
+                        toolElapsed = ((Date.now() - item.toolStartedAt) / 1000).toFixed(1) + "s"
+                      }
+                      return (
+                        <div key={item.id} className="text-xs">
+                          <div 
+                            className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors"
+                            onClick={function() { setExpandedTools(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[item.id] = !p[item.id]; return n }) }}
+                          >
+                            <span className={item.toolStatus === "done" ? "text-success" : item.toolStatus === "error" ? "text-error" : "text-warning" + " shrink-0"}>
+                              {item.toolStatus === "running" ? "⏳" : item.toolStatus === "done" ? "✓" : "✗"}
+                            </span>
+                            <span className="text-text-secondary font-medium shrink-0">{item.toolName}</span>
+                            {item.toolStatus === "running" && toolElapsed ? <span className="text-text-muted/60 shrink-0">{toolElapsed}</span> : null}
+                            {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate min-w-0">{item.content.slice(0, 80)}</span> : null}
+                            {hasDetail && item.toolStatus === "done" ? <span className="text-text-muted shrink-0 ml-auto text-[10px]">{isExpanded ? "▾" : "▸"}</span> : null}
+                          </div>
+                          {hasDetail && isExpanded && (
+                            <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed" style={{maxHeight: "16rem", overflowY: "auto"}}>{item.content}</div>
+                          )}
+                        </div>
+                      )
+                    }
+                    return <MarkdownView key={item.id} content={item.content} />
+                  })}
+                  {streamItems.length > 0 && streamItems[streamItems.length - 1].type === "text" ? <span className="typing-cursor" /> : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
         </div>
 
