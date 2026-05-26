@@ -533,7 +533,11 @@ export default function Home() {
         }
       }
       setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined }])
-      setStreamItems([]); setStreaming(false); abortControllerRef.current = null
+      // Close streaming first so artifact cards don't flash — they already appear in the new assistant message above
+      setStreaming(false)
+      // Delay clearing stream items by one tick so React batches the streaming→message transition
+      setTimeout(function() { setStreamItems([]) }, 50)
+      abortControllerRef.current = null
       if (newSid) setActiveId(newSid); loadSessions()
     } catch (err: any) {
       // Preserve any partial artifacts on error too
@@ -548,7 +552,9 @@ export default function Home() {
       } else {
         setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now(), artifacts: errArtifacts.length > 0 ? errArtifacts : undefined }])
       }
-      setStreamItems([]); setStreaming(false); abortControllerRef.current = null
+      setStreaming(false)
+      setTimeout(function() { setStreamItems([]) }, 50)
+      abortControllerRef.current = null
     }
   }, [input, streaming, messages, selectedModel, uploadedFiles, loadSessions])
 
