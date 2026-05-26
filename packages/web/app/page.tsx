@@ -180,7 +180,7 @@ async function fetchJSON(url: string, init?: RequestInit) {
   return res.json()
 }
 
-interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number; artifacts?: ArtifactData[]; files?: { name: string; path: string; size: number }[] }
+interface Msg { id: string; role: string; content: string; thinking?: string; tools?: any[]; ts: number; artifacts?: ArtifactData[]; files?: { name: string; path: string; size: number }[]; _streamItems?: StreamItem[] }
 
 // Ordered stream items for correct interleaving of thinking/tools/text
 interface StreamItem {
@@ -558,7 +558,13 @@ export default function Home() {
           })
         }
       }
-      setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined }])
+      // Preserve the exact interleaved order of streamItems so final render matches streaming
+      var finalStreamItems: StreamItem[] = items.map(function(it) {
+        if (it.type === "tool") return { ...it, toolStatus: "done" }
+        if (it.type === "artifact") return { ...it, artifactStreaming: false }
+        return it
+      })
+      setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined, _streamItems: finalStreamItems }])
       // Fade out streaming region, then clear items after CSS transition completes
       setStreaming(false)
       setTimeout(function() { setStreamItems([]) }, 250)
@@ -740,6 +746,50 @@ export default function Home() {
                    <div className="msg-enter max-w-[85%] bg-bg-secondary rounded-2xl rounded-bl-md px-4 py-3">
                       {turn.assistants.map(function(msg, ai) {
                         var isLastInTurn = ai === turn.assistants.length - 1
+                        // If this msg carries interleaved stream items, render them in order
+                        // (preserves the same visual flow as streaming: thinking → tool → text → artifact)
+                        if (msg._streamItems && msg._streamItems.length > 0) {
+                          return (
+                            <div key={msg.id} className="space-y-1.5">
+                              {msg._streamItems.map(function(item: StreamItem) {
+                                if (item.type === "thinking") {
+                                  return (
+                                    <details key={item.id}>
+                                      <summary className="text-xs text-text-muted cursor-pointer select-none flex items-center gap-1.5"><span className="text-[10px]">▸</span><span>Thought for ~{Math.round((item.content || "").length / 4)}s</span></summary>
+                                      <div className="mt-1.5 p-2.5 rounded-lg bg-bg-tertiary text-xs text-text-muted whitespace-pre-wrap max-h-48 overflow-y-auto border border-border">{normalizeNewlines(item.content || "")}</div>
+                                    </details>
+                                  )
+                                }
+                                if (item.type === "artifact") {
+                                  var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, fileUrl: item.artifactFileUrl, streaming: false }
+                                  return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
+                                }
+                                if (item.type === "tool") {
+                                  var hasDetail = item.content && item.content.length > 10
+                                  return (
+                                    <div key={item.id} className="text-xs">
+                                      <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/50 cursor-pointer select-none hover:bg-bg-hover/50 transition-colors"
+                                        onClick={function() { setExpandedTools(function(p) { var n: Record<string,boolean> = {}; Object.assign(n, p); n[item.id] = !p[item.id]; return n }) }}>
+                                        <span className={item.toolStatus === "error" ? "text-error" : "text-success" + " shrink-0"}>
+                                          {item.toolStatus === "error" ? "✗" : "✓"}
+                                        </span>
+                                        <span className="text-text-secondary font-medium shrink-0">{item.toolName}</span>
+                                        {item.content && item.toolStatus === "done" ? <span className="text-text-muted truncate min-w-0">{item.content.slice(0, 80)}</span> : null}
+                                        {hasDetail ? <span className="text-text-muted shrink-0 ml-auto text-[10px]">{expandedTools[item.id] ? "▾" : "▸"}</span> : null}
+                                      </div>
+                                      {hasDetail && expandedTools[item.id] && (
+                                        <div className="mt-1 p-2.5 rounded-lg bg-bg-secondary text-xs text-text-muted whitespace-pre-wrap max-h-64 overflow-y-auto border border-border leading-relaxed" style={{maxHeight: "16rem", overflowY: "auto"}}>{item.content}</div>
+                                      )}
+                                    </div>
+                                  )
+                                }
+                                return <MarkdownView key={item.id} content={item.content} />
+                              })}
+                              {/* Separator between ReAct steps */}
+                              {!isLastInTurn ? <div className="border-t border-border my-3" /> : null}
+                            </div>
+                          )
+                        }
                         return (
                          <div key={msg.id}>
                           {/* Thinking */}
