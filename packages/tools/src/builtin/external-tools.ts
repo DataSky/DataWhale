@@ -211,11 +211,13 @@ async function getSandbox(): Promise<any> {
   // Check existing in-memory sandbox
   if (_sandbox && (now - _sandboxCreatedAt) < SANDBOX_MAX_AGE_MS) {
     try {
-      await _sandbox.runCode("1+1")
+      await _sandbox.runCode("1+1", { timeoutMs: 5000 })
       return _sandbox
     } catch {
+      // Sandbox died or expired — clear and recreate below
       _sandbox = null
       _sandboxPromise = null
+      await clearSandboxId()
     }
   }
 
@@ -333,12 +335,26 @@ const sandboxExecTool: AgentTool = {
     const code = params.code as string
     const timeout = Math.min((params.timeout as number) || 60, 300)
 
-    const sandbox = await getSandbox()
+    let sandbox = await getSandbox()
 
     // Ensure workspace is ready for this session
     await ensureSessionWorkspace(sandbox)
 
-    // ── Bash mode: execute via commands.run ──
+    // ── Retry wrapper: if sandbox dies mid-execution, reconnect once ──
+    const executeWithRetry = async (fn: (sb: any) => Promise<any>) => {
+      try {
+        return await fn(sandbox)
+      } catch (e: any) {
+        // Sandbox connection lost — invalidate and recreate
+        _sandbox = null
+        _sandboxPromise = null
+        try { sandbox = await getSandbox() } catch {
+          throw e  // re-connection failed, surface original error
+        }
+        await ensureSessionWorkspace(sandbox)
+        return await fn(sandbox)  // retry once
+      }
+    }
     if (execType === "bash") {
       try {
         const result = await sandbox.commands.run(code, {
@@ -423,12 +439,12 @@ print(json.dumps(files))
       }
     }
 
-    // Run the code
-    const execution = await sandbox.runCode(code, {
+    // Run the code (with automatic retry on connection loss)
+    const execution = await executeWithRetry((sb: any) => sb.runCode(code, {
       timeoutMs: timeout * 1000,
       onStdout: () => {},
       onStderr: () => {},
-    })
+    }))
 
     const stdout = (execution.logs?.stdout || []).join("") || ""
     const stderr = (execution.logs?.stderr || []).join("") || ""
