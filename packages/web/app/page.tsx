@@ -559,8 +559,9 @@ export default function Home() {
         }
       }
       setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content, thinking: thinking || undefined, tools: tools.length > 0 ? tools : undefined, ts: Date.now(), artifacts: completedArtifacts.length > 0 ? completedArtifacts : undefined }])
-      // Streaming region disappears immediately; assistant message appears via turns with stable keys.
-      setStreamItems([]); setStreaming(false)
+      // Fade out streaming region, then clear items after CSS transition completes
+      setStreaming(false)
+      setTimeout(function() { setStreamItems([]) }, 250)
       abortControllerRef.current = null
       if (newSid) setActiveId(newSid); loadSessions()
     } catch (err: any) {
@@ -576,7 +577,8 @@ export default function Home() {
       } else {
         setMessages([...newMsgs, { id: "m" + Date.now(), role: "assistant", content: "Error: " + (err.message || "unknown"), ts: Date.now(), artifacts: errArtifacts.length > 0 ? errArtifacts : undefined }])
       }
-      setStreamItems([]); setStreaming(false)
+      setStreaming(false)
+      setTimeout(function() { setStreamItems([]) }, 250)
       abortControllerRef.current = null
     }
   }, [input, streaming, messages, selectedModel, uploadedFiles, loadSessions])
@@ -816,9 +818,9 @@ export default function Home() {
             )
           })}
 
-          {/* Streaming — fixed key, stable DOM; renders inline with message list */}
-          {streaming ? (
-            <div key="streaming-container" className="space-y-2">
+          {/* Streaming — fades out smoothly when complete; new message fades in */}
+          <div key="streaming-container" className={"space-y-2 transition-opacity duration-200 " + (streaming ? "opacity-100" : "opacity-0 pointer-events-none")}>
+            {streaming ? (
               <div className="msg-enter flex justify-start">
                 <div className="max-w-[85%] min-w-0 bg-bg-secondary rounded-2xl rounded-bl-md px-4 py-3 space-y-1.5">
                   {streamItems.length === 0 ? (
@@ -869,8 +871,8 @@ export default function Home() {
                   {streamItems.length > 0 && streamItems[streamItems.length - 1].type === "text" ? <span className="typing-cursor" /> : null}
                 </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
         </div>
 
