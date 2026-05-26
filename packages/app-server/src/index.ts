@@ -146,7 +146,7 @@ app.post("/api/chat", async (c) => {
           data.toolCallId = event.toolCallId
           data.toolName = event.toolName
           data.args = event.args
-          traceStore.record({ sessionId, eventType: "tool_call", toolName: event.toolName, inputTokens: 0, outputTokens: 0, timestamp: Date.now() }).catch(() => {})
+          traceStore.record({ traceId: event.toolCallId, sessionId, eventType: "tool_call", toolName: event.toolName, inputTokens: 0, outputTokens: 0, timestamp: Date.now() }).catch((e: any) => console.error("[trace] tool_call record failed:", e.message))
           break
         case "tool_call_end":
           data.toolCallId = event.toolCallId
@@ -185,6 +185,7 @@ app.post("/api/chat", async (c) => {
           data.error = event.state.error
           data.sessionId = sessionId
           traceStore.record({
+            traceId: sessionId + "_" + Date.now(),
             sessionId, eventType: "agent_end",
             inputTokens: event.state.usage?.inputTokens || 0,
             outputTokens: event.state.usage?.outputTokens || 0,

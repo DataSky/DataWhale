@@ -73,6 +73,8 @@ export class TraceStore {
       this._db.run(`CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces(timestamp)`)
 
       this._initialised = true
+      // Persist table structure immediately so restarts don't lose the schema
+      await saveDatabase(this.dbPath)
     }
 
     return this._db
