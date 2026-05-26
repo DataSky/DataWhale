@@ -246,8 +246,13 @@ async function getSandbox(): Promise<any> {
       }
     }
 
-    // Create new sandbox
-    _sandbox = await Sandbox.create({ apiKey, timeoutMs: 1800_000 })
+    // Create new sandbox with auto-resume (E2B best practice).
+    // On timeout → pause; next operation auto-resumes transparently.
+    _sandbox = await Sandbox.create({
+      apiKey,
+      timeoutMs: 1800_000,
+      lifecycle: { onTimeout: "pause", autoResume: true },
+    })
     _sandboxId = _sandbox.sandboxId
     _sandboxCreatedAt = Date.now()
 
