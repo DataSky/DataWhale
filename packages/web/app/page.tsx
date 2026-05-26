@@ -719,10 +719,8 @@ export default function Home() {
                                     </details>
                                   )
                                 }
-                                if (item.type === "artifact") {
-                                  var art: ArtifactData = { id: item.id, type: item.artifactType || "html", title: item.artifactTitle, content: item.content, fileUrl: item.artifactFileUrl, streaming: false }
-                                  return <ArtifactCard key={item.id} artifact={art} onFullscreen={function() { setFullscreenArtifact(art) }} />
-                                }
+                                // Artifact renders via msg.artifacts below (single source, no duplicate)
+                                if (item.type === "artifact") return null
                                 if (item.type === "tool") {
                                   var hasDetail = item.content && item.content.length > 10
                                   return (
@@ -761,6 +759,14 @@ export default function Home() {
                                       })
                                     })}
                                   </div>
+                                </div>
+                              ) : null}
+                              {/* Artifacts — rendered once here (not in stream items above) */}
+                              {msg.artifacts && msg.artifacts.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  {msg.artifacts.map(function(a) {
+                                    return <ArtifactCard key={a.id} artifact={a} onFullscreen={function() { setFullscreenArtifact(a) }} />
+                                  })}
                                 </div>
                               ) : null}
                               {/* Separator between ReAct steps */}
